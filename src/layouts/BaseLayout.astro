@@ -14,7 +14,7 @@ interface Props {
 
 const {
   title,
-  description = 'Building small things on the internet.',
+  description = 'Francis Taino — software engineer building small things on the internet.',
   ogImage = '/og-image.png',
   type = 'website',
   publishedAt,
@@ -24,6 +24,19 @@ const siteName = 'francistaino';
 const fullTitle = title === siteName ? `Francis Taino — ${description}` : `${title} · ${siteName}`;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const ogImageUrl = new URL(ogImage, Astro.site).toString();
+
+const personSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  name: 'Francis Taino',
+  url: Astro.site?.toString() ?? 'https://francistaino.com',
+  jobTitle: 'Software Engineer',
+  worksFor: { '@type': 'Organization', name: 'Mango', url: 'https://mango.nyc' },
+  sameAs: [
+    'https://linkedin.com/in/francistaino',
+    'https://github.com/franc1sjacob',
+  ],
+};
 ---
 
 <!doctype html>
@@ -60,6 +73,8 @@ const ogImageUrl = new URL(ogImage, Astro.site).toString();
 
     <link rel="alternate" type="application/rss+xml" title={siteName} href="/rss.xml" />
     <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(personSchema)} />
 
     <ClientRouter />
 
