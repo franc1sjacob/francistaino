@@ -53,9 +53,13 @@
 
     root.style.setProperty('--x', `${event.clientX}px`);
     root.style.setProperty('--y', `${event.clientY}px`);
+    root.classList.add('is-theme-transition');
 
     // @ts-ignore
-    document.startViewTransition(apply);
+    const transition = document.startViewTransition(apply);
+    transition.finished.finally(() => {
+      root.classList.remove('is-theme-transition');
+    });
   }
 
   function setup() {

@@ -74,14 +74,18 @@ section.block h2 {
 
 .status-dot { color: var(--accent); }
 
-/* Theme toggle wave animation (uses View Transitions API) */
-::view-transition-old(root),
-::view-transition-new(root) {
+/* Theme toggle wave animation — only when html has .is-theme-transition.
+   Navigation transitions keep Astro's default cross-fade. */
+html.is-theme-transition::view-transition-old(root),
+html.is-theme-transition::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
-::view-transition-old(root) { z-index: 0; }
-::view-transition-new(root) { z-index: 1; animation: theme-reveal 0.4s ease-in-out forwards; }
+html.is-theme-transition::view-transition-old(root) { z-index: 0; }
+html.is-theme-transition::view-transition-new(root) {
+  z-index: 1;
+  animation: theme-reveal 0.4s ease-in-out forwards;
+}
 
 @keyframes theme-reveal {
   from {
