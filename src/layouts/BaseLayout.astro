@@ -56,7 +56,8 @@ const ogImageUrl = new URL(ogImage, Astro.site).toString();
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <meta name="theme-color" content="#0d1117" />
+    <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 
     <link rel="alternate" type="application/rss+xml" title={siteName} href="/rss.xml" />
     <link rel="sitemap" href="/sitemap-index.xml" />
@@ -67,7 +68,15 @@ const ogImageUrl = new URL(ogImage, Astro.site).toString();
       (function () {
         const saved = localStorage.getItem('theme');
         const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-        document.documentElement.setAttribute('data-theme', saved || (prefersLight ? 'light' : 'dark'));
+        const theme = saved || (prefersLight ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+        // Override media-based theme-color when user has a manual preference
+        if (saved) {
+          const meta = document.createElement('meta');
+          meta.name = 'theme-color';
+          meta.content = saved === 'light' ? '#ffffff' : '#0d1117';
+          document.head.appendChild(meta);
+        }
       })();
     </script>
   </head>
