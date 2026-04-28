@@ -21,7 +21,7 @@ const {
 } = Astro.props;
 
 const siteName = 'francistaino';
-const fullTitle = title === siteName ? `Francis Taino — ${description}` : `${title} · ${siteName}`;
+const fullTitle = title === siteName ? 'Francis Taino — Software engineer' : `${title} · ${siteName}`;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const ogImageUrl = new URL(ogImage, Astro.site).toString();
 
