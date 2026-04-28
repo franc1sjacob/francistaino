@@ -1,0 +1,143 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+interface Job {
+  year: string;
+  company: string;
+  url?: string;
+  role: string;
+  summary: string;
+}
+
+const jobs: Job[] = [
+  {
+    year: '2025 –',
+    company: 'Mango',
+    url: 'https://mango.nyc',
+    role: 'Software Engineer',
+    summary: 'First engineer on hiregrade.ai, an AI-powered interview platform. Started part-time building the core, now full-time across product and client work.',
+  },
+  {
+    year: '2026',
+    company: 'Caffeine',
+    url: 'https://caffeine.ai',
+    role: 'Software Engineer · via Mango',
+    summary: 'Shipped 15+ dapps to the caffeine.ai marketplace. React + Motoko.',
+  },
+  {
+    year: '2026',
+    company: 'DFINITY',
+    url: 'https://dfinity.org',
+    role: 'Software Engineer · via Mango',
+    summary: 'Reworked internal KYC infrastructure — tighter service-to-service data sync, fewer manual ops.',
+  },
+  {
+    year: '2024 – 25',
+    company: 'The Volte',
+    url: 'https://thevolte.com',
+    role: 'Junior Software Engineer',
+    summary: 'Worked on a luxury fashion rental marketplace — designer dresses, bags, and accessories on demand.',
+  },
+  {
+    year: '2023 – 24',
+    company: 'Himex Corporation',
+    role: 'Junior Full Stack Developer',
+    summary: 'Built a radiology information system for hospitals. Two-dev team — wore every hat from product to QA.',
+  },
+];
+
+interface Edu {
+  year: string;
+  school: string;
+  detail: string;
+}
+
+const education: Edu[] = [
+  {
+    year: '2019 – 23',
+    school: 'University of Santo Tomas',
+    detail: 'BS Information Technology · Manila, Philippines',
+  },
+];
+---
+
+<BaseLayout title="About" description="A bit about me, my work, and what I'm into.">
+  <div class="container">
+    <h1>About</h1>
+    <p class="tagline">A bit about me, my work, and what I'm into.</p>
+
+    <section class="block">
+      <h2>// bio</h2>
+      <p>Software engineer based in Manila. Currently building product at <a href="https://mango.nyc" target="_blank" rel="noopener">Mango</a> and working on Hexis on the side. I like small, focused tools and writing clean code.</p>
+      <p>Outside of work I'm probably reading, lifting, or tinkering with whatever side project caught my interest that week.</p>
+    </section>
+
+    <section class="block">
+      <h2>// work</h2>
+      {jobs.map((j) => (
+        <div class="entry">
+          <div class="year">{j.year}</div>
+          <div>
+            <div class="entry-head">
+              {j.url ? (
+                <a class="entry-title" href={j.url} target="_blank" rel="noopener">{j.company}</a>
+              ) : (
+                <span class="entry-title">{j.company}</span>
+              )}
+              <span class="entry-meta">· {j.role}</span>
+            </div>
+            <div class="entry-desc">{j.summary}</div>
+          </div>
+        </div>
+      ))}
+    </section>
+
+    <section class="block">
+      <h2>// education</h2>
+      {education.map((e) => (
+        <div class="entry">
+          <div class="year">{e.year}</div>
+          <div>
+            <div class="entry-head"><span class="entry-title">{e.school}</span></div>
+            <div class="entry-desc">{e.detail}</div>
+          </div>
+        </div>
+      ))}
+    </section>
+
+    <section class="block">
+      <h2>// also</h2>
+      <p>Resume / CV available on request — email me at <a href="mailto:francistaino16@gmail.com">francistaino16@gmail.com</a>.</p>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .entry {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 16px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border-soft);
+  }
+  .entry:first-of-type { border-top: 0; }
+  .year { color: var(--dim); font-size: 13px; }
+  .entry-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+  }
+  .entry-title {
+    color: var(--text-strong);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  a.entry-title:hover { color: var(--link); text-decoration: underline; }
+  .entry-meta { color: var(--dim); font-size: 13px; }
+  .entry-desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  @media (max-width: 480px) {
+    .entry { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>

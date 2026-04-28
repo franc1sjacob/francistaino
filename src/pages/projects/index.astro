@@ -1,0 +1,35 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { projects, statusLabel } from '../../data/projects';
+---
+
+<BaseLayout title="Projects" description="Things I've built and things I'm building.">
+  <div class="container">
+    <h1>Projects</h1>
+    <p class="tagline">Things I've built and things I'm building.</p>
+
+    <section class="block">
+      {projects.map((p) => (
+        <div class="item">
+          <div>
+            <span class="item-arrow">→</span>{' '}
+            {p.url ? (
+              <a class="item-title" href={p.url} target="_blank" rel="noopener">{p.name}</a>
+            ) : (
+              <span class="item-title">{p.name}</span>
+            )}
+            <span class="item-meta">
+              {p.status && (
+                <> · <span class={`status-${p.status}`}>{statusLabel[p.status]}</span></>
+              )}
+              {p.language && <> · {p.language}</>}
+              {p.year && <> · {p.year}</>}
+            </span>
+          </div>
+          <div class="item-desc">{p.description}</div>
+        </div>
+      ))}
+    </section>
+  </div>
+</BaseLayout>
+

@@ -1,11 +1,70 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+import { projects, statusLabel } from '../data/projects';
 
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+const posts = (await getCollection('blog', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf())
+  .slice(0, 3);
+
+const featured = projects.filter((p) => p.featured).slice(0, 3);
 ---
 
-<Layout>
-	<Welcome />
-</Layout>
+<BaseLayout title="francistaino" description="Building small things on the internet.">
+  <div class="container">
+    <h1>Francis Taino</h1>
+    <p class="tagline">Building small things on the internet.</p>
+
+    <section class="block">
+      <h2>// info</h2>
+      <div class="line"><span class="key">role</span><span class="val">Software engineer</span></div>
+      <div class="line"><span class="key">now</span><span class="val">Engineer at <a href="https://mango.nyc" target="_blank" rel="noopener">Mango</a></span></div>
+      <div class="line"><span class="key">stack</span><span class="val">typescript · react · node · postgres</span></div>
+      <div class="line"><span class="key">location</span><span class="val">Manila, PH (UTC+8)</span></div>
+      <div class="line"><span class="key">status</span><span class="val status-dot">● open to interesting work</span></div>
+    </section>
+
+    <section class="block">
+      <h2>// projects</h2>
+      {featured.map((p) => (
+        <div class="item">
+          <div>
+            <span class="item-arrow">→</span>{' '}
+            <a class="item-title" href="/projects">{p.name}</a>
+            <span class="item-meta">
+              {p.status && (
+                <> · <span class={`status-${p.status}`}>{statusLabel[p.status]}</span></>
+              )}
+              {p.year && <> · {p.year}</>}
+            </span>
+          </div>
+          <div class="item-desc">{p.description}</div>
+        </div>
+      ))}
+    </section>
+
+    {posts.length > 0 && (
+      <section class="block">
+        <h2>// recent writing</h2>
+        {posts.map((post) => (
+          <div class="item">
+            <div>
+              <span class="item-arrow">→</span>
+              <a class="item-title" href={`/blog/${post.id}`}>{post.data.title}</a>
+              <span class="item-meta">· {post.data.publishedAt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toLowerCase()}</span>
+            </div>
+            <div class="item-desc">{post.data.description}</div>
+          </div>
+        ))}
+      </section>
+    )}
+
+    <section class="block">
+      <h2>// elsewhere</h2>
+      <div class="line"><span class="key">email</span><span class="val"><a href="mailto:francistaino16@gmail.com">francistaino16@gmail.com</a></span></div>
+      <div class="line"><span class="key">linkedin</span><span class="val"><a href="https://linkedin.com/in/francistaino" target="_blank" rel="noopener">francistaino</a></span></div>
+      <div class="line"><span class="key">github</span><span class="val"><a href="https://github.com/franc1sjacob" target="_blank" rel="noopener">franc1sjacob</a></span></div>
+      <div class="line"><span class="key">threads</span><span class="val"><a href="https://threads.net/@jacobtaino" target="_blank" rel="noopener">jacobtaino</a></span></div>
+    </section>
+  </div>
+</BaseLayout>

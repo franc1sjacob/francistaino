@@ -1,0 +1,59 @@
+---
+import ThemeToggle from './ThemeToggle.astro';
+
+const pathname = Astro.url.pathname;
+const isActive = (path: string) => {
+  if (path === '/') return pathname === '/';
+  return pathname === path || pathname.startsWith(path + '/');
+};
+---
+
+<nav class="nav">
+  <a href="/" class="brand">francistaino<span class="cursor">▌</span></a>
+  <span class="links">
+    <a href="/" class:list={[{ active: isActive('/') }]}>~</a>
+    <a href="/about" class:list={[{ active: isActive('/about') }]}>about</a>
+    <a href="/projects" class:list={[{ active: isActive('/projects') }]}>projects</a>
+    <a href="/blog" class:list={[{ active: isActive('/blog') }]}>blog</a>
+    <ThemeToggle />
+  </span>
+</nav>
+
+<style>
+  .nav {
+    max-width: 640px;
+    margin: 0 auto;
+    width: 100%;
+    border-bottom: 1px solid var(--border-soft);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+  }
+  .brand {
+    color: var(--text-strong);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .brand:hover { color: var(--link); text-decoration: none; }
+  .cursor {
+    color: var(--accent);
+    animation: blink 1s steps(2) infinite;
+    margin-left: 2px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .links {
+    margin-left: auto;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+  .links a {
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .links a:hover { color: var(--text-strong); }
+  .links a.active { color: var(--accent); }
+</style>

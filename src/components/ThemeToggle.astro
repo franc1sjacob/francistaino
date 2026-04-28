@@ -1,0 +1,31 @@
+---
+---
+<button class="theme-toggle" id="theme-toggle" aria-label="toggle theme">
+  <span class="icon-dark">☾</span><span class="icon-light">☼</span>
+</button>
+
+<style>
+  .theme-toggle {
+    background: transparent;
+    border: 0;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+  }
+  .theme-toggle:hover { color: var(--text-strong); }
+  .icon-light { display: none; }
+  :global(html[data-theme="light"]) .icon-dark { display: none; }
+  :global(html[data-theme="light"]) .icon-light { display: inline; }
+</style>
+
+<script>
+  const btn = document.getElementById('theme-toggle');
+  btn?.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  });
+</script>

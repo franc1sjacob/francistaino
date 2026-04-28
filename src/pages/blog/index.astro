@@ -1,0 +1,39 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf());
+---
+
+<BaseLayout title="Blog" description="Notes on engineering, infrastructure, and shipping things.">
+  <div class="container">
+    <h1>Blog</h1>
+    <p class="tagline">Notes on engineering, infrastructure, and shipping things.</p>
+
+    {posts.length > 0 ? (
+      <section class="block">
+        {posts.map((post) => (
+          <div class="item">
+            <div>
+              <span class="item-arrow">→</span>
+              <a class="item-title" href={`/blog/${post.id}`}>{post.data.title}</a>
+              <span class="item-meta">· {post.data.publishedAt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toLowerCase()}</span>
+            </div>
+            <div class="item-desc">{post.data.description}</div>
+          </div>
+        ))}
+      </section>
+    ) : (
+      <p class="empty">No posts yet. Subscribe via <a href="/rss.xml">rss</a> for when there are.</p>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  .empty {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 32px;
+  }
+</style>
