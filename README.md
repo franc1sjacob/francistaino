@@ -57,13 +57,12 @@ title: Post title
 description: One-line summary for SEO and the post list
 publishedAt: 2026-04-28
 tags: [tag-one, tag-two]
-draft: false
 ---
 
 Markdown content here.
 ```
 
-The slug comes from the filename. Set `draft: true` to hide a post from the site and feed.
+The slug comes from the filename. To hide a draft from the site and feed, prefix the filename with an underscore (e.g. `_cool-idea.md`).
 
 ## Commands
 
