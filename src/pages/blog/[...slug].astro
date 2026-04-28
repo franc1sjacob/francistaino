@@ -4,7 +4,7 @@ import { getCollection, render } from 'astro:content';
 import readingTime from 'reading-time';
 
 export async function getStaticPaths() {
-  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  const posts = await getCollection('blog');
   return posts.map((post) => ({
     params: { slug: post.id },
     props: { post },
@@ -29,7 +29,7 @@ const dateLabel = post.data.publishedAt.toLocaleDateString('en-US', {
 >
   <article class="container">
     <a class="back" href="/blog">← back to blog</a>
-    <h1 style="margin-top:16px;">{post.data.title}</h1>
+    <h1 class="post-title">{post.data.title}</h1>
     <p class="post-meta">
       <time datetime={post.data.publishedAt.toISOString()}>{dateLabel}</time>
       {' · '}{stats.text}
@@ -42,3 +42,9 @@ const dateLabel = post.data.publishedAt.toLocaleDateString('en-US', {
     </div>
   </article>
 </BaseLayout>
+
+<style>
+  .post-title {
+    margin-top: 16px;
+  }
+</style>

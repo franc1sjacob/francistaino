@@ -22,8 +22,7 @@
 </style>
 
 <script>
-  const btn = document.getElementById('theme-toggle');
-  btn?.addEventListener('click', (event) => {
+  function handleClick(event: MouseEvent) {
     const root = document.documentElement;
     const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
 
@@ -39,11 +38,18 @@
       return;
     }
 
-    const e = event as MouseEvent;
-    root.style.setProperty('--x', `${e.clientX}px`);
-    root.style.setProperty('--y', `${e.clientY}px`);
+    root.style.setProperty('--x', `${event.clientX}px`);
+    root.style.setProperty('--y', `${event.clientY}px`);
 
     // @ts-ignore
     document.startViewTransition(apply);
-  });
+  }
+
+  function setup() {
+    const btn = document.getElementById('theme-toggle');
+    btn?.addEventListener('click', handleClick as EventListener);
+  }
+
+  setup();
+  document.addEventListener('astro:page-load', setup);
 </script>
