@@ -9,7 +9,7 @@
   --border:       #30363d;
   --border-soft:  #21262d;
   --link:         #58a6ff;
-  --accent:       #7ee787;
+  --accent:       #d97757;
 }
 :root[data-theme="light"] {
   --bg:           #ffffff;
@@ -22,7 +22,7 @@
   --border:       #d0d7de;
   --border-soft:  #d8dee4;
   --link:         #0969da;
-  --accent:       #1a7f37;
+  --accent:       #bd5d3a;
 }
 
 * { box-sizing: border-box; }
