@@ -23,9 +23,27 @@
 
 <script>
   const btn = document.getElementById('theme-toggle');
-  btn?.addEventListener('click', () => {
-    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('theme', next);
+  btn?.addEventListener('click', (event) => {
+    const root = document.documentElement;
+    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+
+    const apply = () => {
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    };
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // @ts-ignore — startViewTransition is not in older TS lib.dom
+    if (!document.startViewTransition || prefersReducedMotion) {
+      apply();
+      return;
+    }
+
+    const e = event as MouseEvent;
+    root.style.setProperty('--x', `${e.clientX}px`);
+    root.style.setProperty('--y', `${e.clientY}px`);
+
+    // @ts-ignore
+    document.startViewTransition(apply);
   });
 </script>
