@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.18",
-    "astro": "^6.0.3",
+    "astro": "^6.1.9",
     "reading-time": "^1.5.0"
   },
   "devDependencies": {
