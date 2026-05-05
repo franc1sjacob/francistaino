@@ -1,0 +1,31 @@
+---
+export function getStaticPaths() {
+  return [
+    { params: { source: 'github' }, props: { medium: 'profile' } },
+    { params: { source: 'linkedin' }, props: { medium: 'profile' } },
+    { params: { source: 'instagram' }, props: { medium: 'bio' } },
+    { params: { source: 'threads' }, props: { medium: 'bio' } },
+  ];
+}
+
+const { source } = Astro.params;
+const { medium } = Astro.props;
+const target = `/?utm_source=${source}&utm_medium=${medium}`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Redirecting…</title>
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href="https://francistaino.com/" />
+    <script is:inline define:vars={{ target }}>
+      window.location.replace(target);
+    </script>
+  </head>
+  <body>
+    <p>Redirecting to <a href={target}>francistaino.com</a>…</p>
+  </body>
+</html>
