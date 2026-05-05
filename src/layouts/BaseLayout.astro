@@ -81,19 +81,23 @@ const personSchema = {
     <ClientRouter />
 
     <script is:inline>
-      (function () {
+      function applyTheme() {
         const saved = localStorage.getItem('theme');
         const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
         const theme = saved || (prefersLight ? 'light' : 'dark');
         document.documentElement.setAttribute('data-theme', theme);
-        // Override media-based theme-color when user has a manual preference
         if (saved) {
-          const meta = document.createElement('meta');
-          meta.name = 'theme-color';
+          let meta = document.querySelector('meta[name="theme-color"]:not([media])');
+          if (!meta) {
+            meta = document.createElement('meta');
+            meta.name = 'theme-color';
+            document.head.appendChild(meta);
+          }
           meta.content = saved === 'light' ? '#ffffff' : '#0d1117';
-          document.head.appendChild(meta);
         }
-      })();
+      }
+      applyTheme();
+      document.addEventListener('astro:after-swap', applyTheme);
     </script>
   </head>
   <body>
