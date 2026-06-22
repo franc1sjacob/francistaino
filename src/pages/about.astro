@@ -6,16 +6,28 @@ interface Job {
   company: string;
   url?: string;
   role: string;
-  summary: string;
+  summary?: string;
+  summaryLead?: string;
+  product?: { name: string; url: string };
+  summaryTail?: string;
 }
 
 const jobs: Job[] = [
+  {
+    year: '2026 –',
+    company: 'Eunice AI',
+    url: 'https://eunice.ai',
+    role: 'Software Engineer · via Mango',
+    summary: 'On a small private markets team, building agentic AI workflows that turn fragmented diligence materials into structured, source-backed analysis.',
+  },
   {
     year: '2025 –',
     company: 'Mango',
     url: 'https://mango.nyc',
     role: 'Software Engineer',
-    summary: 'First engineer on hiregrade.ai, an AI-powered interview platform. Started part-time building the core, now full-time across product and client work.',
+    summaryLead: 'Building internal products and consulting for clients. First engineer on ',
+    product: { name: 'MangoHire', url: 'https://mangohire.com' },
+    summaryTail: ', an AI-powered interview platform.',
   },
   {
     year: '2026',
@@ -68,7 +80,7 @@ const education: Edu[] = [
 
     <section class="block">
       <h2>// bio</h2>
-      <p>I'm Francis Taino — a software engineer based in Manila. Currently building product at <a href="https://mango.nyc" target="_blank" rel="noopener">Mango</a> and working on Hexis on the side. I like small, focused tools and writing clean code.</p>
+      <p>I'm Francis Taino — a software engineer based in Manila. Currently building agentic AI for private markets due diligence at <a href="https://eunice.ai" target="_blank" rel="noopener">Eunice AI</a>, and working on Hexis on the side.</p>
       <p>Outside of work I'm probably reading, lifting, or tinkering with whatever side project caught my interest that week.</p>
     </section>
 
@@ -86,7 +98,13 @@ const education: Edu[] = [
               )}
               <span class="entry-meta">· {j.role}</span>
             </div>
-            <div class="entry-desc">{j.summary}</div>
+            <div class="entry-desc">
+              {j.summary ?? (
+                <>
+                  {j.summaryLead}<a href={j.product!.url} target="_blank" rel="noopener">{j.product!.name}</a>{j.summaryTail}
+                </>
+              )}
+            </div>
           </div>
         </div>
       ))}
