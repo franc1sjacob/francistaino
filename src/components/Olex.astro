@@ -1,0 +1,29 @@
+---
+---
+<div id="olex-layer" transition:persist aria-hidden="false">
+  <canvas id="olex" role="img" aria-label="Olex the dog"></canvas>
+</div>
+
+<style>
+  #olex-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #olex {
+    position: absolute;
+    left: 0;
+    top: 0;
+    image-rendering: pixelated;
+    pointer-events: none;
+  }
+</style>
+
+<script>
+  import { start } from '../olex/index';
+  start();
+</script>

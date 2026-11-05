@@ -2,6 +2,7 @@
 import { ClientRouter } from 'astro:transitions';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
+import Olex from '../components/Olex.astro';
 import '../styles/global.css';
 
 interface Props {
@@ -106,5 +107,6 @@ const personSchema = {
       <slot />
     </main>
     <Footer />
+    <Olex />
   </body>
 </html>
