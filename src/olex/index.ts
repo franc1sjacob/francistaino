@@ -38,7 +38,7 @@ const pets = createPetCounter({
   beacon: (url, body) => navigator.sendBeacon?.(url, body) ?? false,
   store,
 });
-let bone: HTMLCanvasElement | null = null;
+let treatEl: HTMLCanvasElement | null = null;
 let legsMoving = false;
 let tickAcc = 0;
 let lastFrame = 0;
@@ -92,7 +92,7 @@ function draw(): void {
   canvas.classList.toggle("carried", m === "carried");
   // the footer is replaced on navigation, so look the house up each frame (cheap)
   document.getElementById("olex-house")?.classList.toggle("in-front", houseInFront(state, world));
-  drawBone();
+  drawTreat();
   drawBall();
   drawStars();
 
@@ -113,25 +113,41 @@ function snore(now: number): void {
   setTimeout(() => z.remove(), 1800);
 }
 
-// a tiny pixel bone for the treat command
-const BONE = ["#.....#", "##...##", ".#####.", "##...##", "#.....#"];
-function drawBone(): void {
+// the treat: a roast chicken drumstick in pixel art. M meat, m crispy edge, h highlight, b bone
+const CHICKEN = [
+  "..mmmm.....",
+  ".mMMhhm....",
+  "mMMMMhMm...",
+  "mMMMMMMm...",
+  "mMMMMMMmb..",
+  ".mMMMMm.bbb",
+  "..mmmm..bbb",
+  "........b..",
+];
+const CHICKEN_COLORS: Record<string, string> = { M: "#c8743a", m: "#8f4a22", h: "#e8a067", b: "#efe6d6" };
+function drawTreat(): void {
   if (!state.treat) {
-    bone?.remove();
-    bone = null;
+    treatEl?.remove();
+    treatEl = null;
     return;
   }
-  if (!bone) {
-    bone = document.createElement("canvas");
-    bone.className = "olex-bone";
-    bone.width = BONE[0].length;
-    bone.height = BONE.length;
-    const c = bone.getContext("2d")!;
-    c.fillStyle = "#efe6d6";
-    BONE.forEach((row, y) => [...row].forEach((ch, x) => ch === "#" && c.fillRect(x, y, 1, 1)));
-    layer.appendChild(bone);
+  if (!treatEl) {
+    treatEl = document.createElement("canvas");
+    treatEl.className = "olex-treat";
+    treatEl.width = CHICKEN[0].length;
+    treatEl.height = CHICKEN.length;
+    const c = treatEl.getContext("2d")!;
+    CHICKEN.forEach((row, y) =>
+      [...row].forEach((ch, x) => {
+        if (!CHICKEN_COLORS[ch]) return;
+        c.fillStyle = CHICKEN_COLORS[ch];
+        c.fillRect(x, y, 1, 1);
+      }),
+    );
+    layer.appendChild(treatEl);
   }
-  bone.style.transform = `translate(${Math.round(state.treat.x - 7)}px, ${Math.round(world.plats[state.plat]?.y - 10)}px)`;
+  const ground = world.plats[state.plat]?.y ?? state.y;
+  treatEl.style.transform = `translate(${Math.round(state.treat.x - CHICKEN[0].length)}px, ${Math.round(ground - CHICKEN.length * 2)}px)`;
 }
 
 // cartoon stars circling his head while he is dizzy
@@ -184,8 +200,8 @@ function setHome(home: boolean): void {
   if (home) {
     tag.hidden = true;
     setBall(layer, null);
-    bone?.remove();
-    bone = null;
+    treatEl?.remove();
+    treatEl = null;
   }
   store.setHome(home);
   if (home) houseSnores();
