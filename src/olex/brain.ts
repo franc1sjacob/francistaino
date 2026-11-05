@@ -9,6 +9,8 @@ export type Mode =
   | "walk" | "turn" | "hop" | "idle" | "fall" | "carried" | "drop" | "shake" | "pet" | "spin"
   | "command" | "fetch" | "home" | "goingHome";
 
+export type Idle = "sit" | "scratch" | "yawn" | "nap" | "notice";
+
 export type State = {
   mode: Mode;
   x: number;            // body centre, document px
@@ -30,6 +32,13 @@ export type State = {
   pivot: { x: number; y: number };             // scruff position while carried or dropped
   pointer: { x: number; y: number; vx: number };
   pets: number[];       // recent pet times, for the spin trick
+  idle: Idle | null;    // current idle behavior while mode is "idle"
+  lastIdle: Idle | null;
+  nextIdleAt: number;
+  noticeCooldown: number;
+  poseGoal: Pose;       // pose he is easing toward
+  phase: number;        // scratch phase
+  wag: number | null;   // tail wag phase, null when still
 };
 
 export type World = {
@@ -40,6 +49,8 @@ export type World = {
   paused: boolean;      // e.g. while text is selected
   rand: () => number;
   scruff: (yaw: number) => [number, number];   // scruff offset from his feet in page px (x, up)
+  cursor: { x: number; y: number; stillSince: number } | null;
+  hover: boolean;
 };
 
 const SPEED = 0.9;
@@ -60,6 +71,13 @@ const SPIN_RATE = 0.3;
 const PETS_FOR_TRICK = 4;
 const PET_WINDOW_MS = 3000;
 const TAU = Math.PI * 2;
+const IDLE_EVERY_MS = 8000;      // plus up to the same again, at random
+const NAP_AFTER_MS = 30_000;
+const NOTICE_STILL_MS = 1000;
+const NOTICE_RANGE = 200;
+const NOTICE_COOLDOWN_MS = 8000;
+const POSE_RATE = 0.08;
+const IDLES: Idle[] = ["sit", "scratch", "yawn"];
 
 export const facingYaw = (dir: 1 | -1) => (dir > 0 ? 0 : Math.PI);
 
@@ -71,6 +89,8 @@ export function initState(w: World): State {
     yaw: 0, targetYaw: 0, walk: 0, hop: null, fallV: 0, pose: "stand", poseT: 0, timer: 0,
     lastInteraction: w.now, offscreenSince: null,
     swingA: 0, swingV: 0, pivot: { x: 0, y: 0 }, pointer: { x: 0, y: 0, vx: 0 }, pets: [],
+    idle: null, lastIdle: null, nextIdleAt: w.now + IDLE_EVERY_MS, noticeCooldown: 0,
+    poseGoal: "stand", phase: 0, wag: null,
   };
 }
 
@@ -179,8 +199,16 @@ export function tick(s: State, w: World): void {
   if (w.reducedMotion && (s.mode === "walk" || s.mode === "turn" || s.mode === "hop")) {
     s.mode = "idle";
     s.hop = null;
-    s.pose = "sit";
+    s.pose = s.poseGoal = "sit";
     s.poseT = 1;
+  }
+  stepPose(s);
+  s.wag = w.hover || s.mode === "pet" ? (s.wag ?? 0) + 0.5 : null;
+  if (!w.reducedMotion) {
+    const restful = s.mode === "walk" || s.mode === "turn" || s.mode === "idle";
+    if (restful && s.idle !== "nap" && w.now - s.lastInteraction > NAP_AFTER_MS) startIdle(s, w, "nap");
+    if (s.mode === "walk" && noticesCursor(s, w)) startIdle(s, w, "notice");
+    else if (s.mode === "walk" && w.now >= s.nextIdleAt) startIdle(s, w, pickIdle(s, w.rand));
   }
 
   const grounded = ["walk", "turn", "idle", "pet", "shake", "spin"].includes(s.mode);
@@ -189,6 +217,9 @@ export function tick(s: State, w: World): void {
   switch (s.mode) {
     case "walk":
       stepWalk(s, w);
+      break;
+    case "idle":
+      stepIdle(s, w);
       break;
     case "turn":
       if (Math.abs(s.targetYaw - s.yaw) < 0.01) {
@@ -292,6 +323,12 @@ const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake"].includ
 
 export function handle(s: State, g: Gesture, w: World): void {
   s.lastInteraction = w.now;
+  // any attention ends whatever he was idly doing, including a nap
+  if (s.idle) {
+    s.idle = null;
+    s.poseGoal = "stand";
+    s.nextIdleAt = w.now + IDLE_EVERY_MS;
+  }
   switch (g.kind) {
     case "pet": {
       if (!canBePetted(s.mode)) return;
@@ -331,4 +368,88 @@ export function handle(s: State, g: Gesture, w: World): void {
     case "menu":
       return; // menu arrives in task 7
   }
+}
+
+export function pickIdle(s: State, rand: () => number): Idle {
+  const options = IDLES.filter((i) => i !== s.lastIdle);
+  const idle = options[Math.min(options.length - 1, Math.floor(rand() * options.length))];
+  s.lastIdle = idle;
+  return idle;
+}
+
+function stepPose(s: State): void {
+  if (s.pose !== s.poseGoal) {
+    // ease out of the old pose before easing into the new one
+    if (s.pose === "stand" || s.poseT <= 0) {
+      s.pose = s.poseGoal;
+      s.poseT = 0;
+    } else s.poseT = Math.max(0, s.poseT - POSE_RATE);
+  } else if (s.pose !== "stand") s.poseT = Math.min(1, s.poseT + POSE_RATE);
+}
+
+function noticesCursor(s: State, w: World): boolean {
+  const c = w.cursor;
+  if (!c || w.now < s.noticeCooldown || w.now - c.stillSince < NOTICE_STILL_MS) return false;
+  return Math.hypot(c.x - s.x, c.y - (s.y - 20)) <= NOTICE_RANGE;
+}
+
+function startIdle(s: State, w: World, idle: Idle): void {
+  s.mode = "idle";
+  s.idle = idle;
+  s.hop = null;
+  s.phase = 0;
+  switch (idle) {
+    case "sit":
+      s.poseGoal = "sit";
+      s.timer = 180 + Math.floor(w.rand() * 120);
+      break;
+    case "scratch":
+      s.poseGoal = "sit";
+      s.timer = 120;
+      break;
+    case "yawn":
+      s.targetYaw = Math.PI / 2;
+      s.timer = 90;
+      break;
+    case "nap":
+      s.poseGoal = "curl";
+      s.timer = Infinity;
+      break;
+    case "notice":
+      s.timer = 180;
+      break;
+  }
+}
+
+function endIdle(s: State, w: World): void {
+  if (s.idle === "notice") s.noticeCooldown = w.now + NOTICE_COOLDOWN_MS;
+  s.idle = null;
+  s.poseGoal = "stand";
+  s.nextIdleAt = w.now + IDLE_EVERY_MS * (1 + w.rand());
+  turnTo(s, facingYaw(s.dir));
+}
+
+function stepIdle(s: State, w: World): void {
+  if (!s.idle) return; // reduced motion: just sit
+  if (s.idle === "nap") return;
+  if (s.idle === "scratch") s.phase += 0.6;
+  if (s.idle === "notice") {
+    const c = w.cursor;
+    if (!c) return endIdle(s, w);
+    const p = w.plats[s.plat];
+    const dx = c.x - s.x;
+    const blocked = dx > 0 ? s.x >= p.x2 - EDGE : s.x <= p.x1 + EDGE;
+    if (Math.abs(dx) > 30 && !blocked) {
+      // trot over
+      s.dir = dx > 0 ? 1 : -1;
+      s.targetYaw = facingYaw(s.dir);
+      s.x += s.dir * SPEED * 1.4;
+      s.walk += WALK_RATE * 1.5;
+      return;
+    }
+    // arrived: sit and look up at you
+    s.targetYaw = Math.PI / 2;
+    s.poseGoal = "sit";
+  }
+  if (--s.timer <= 0) endIdle(s, w);
 }

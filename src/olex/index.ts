@@ -48,7 +48,9 @@ function draw(): void {
   lastOut = render(W, H, {
     yaw: state.yaw,
     walk: m === "walk" || m === "hop" || m === "carried" ? state.walk % 1 : null,
-    tongue: m === "pet" || m === "carried" || m === "spin",
+    tongue: m === "pet" || m === "carried" || m === "spin" || state.idle === "yawn",
+    tailWag: state.wag,
+    scratch: state.idle === "scratch" && state.poseT > 0.9 ? state.phase : null,
     pose: state.pose,
     poseT: state.poseT,
     hang: airborne ? state.swingA : null,
@@ -65,6 +67,18 @@ function draw(): void {
   tag.hidden = !(hovering || m === "carried");
   const top = airborne ? state.pivot.y - 34 : state.y - 30 * SCALE;
   tag.style.transform = `translate(${Math.round(state.x)}px, ${Math.round(top)}px) translateX(-50%)`;
+}
+
+let lastZ = 0;
+function snore(now: number): void {
+  if (state.idle !== "nap" || state.poseT < 1 || now - lastZ < 1400) return;
+  lastZ = now;
+  const z = document.createElement("div");
+  z.className = "olex-z";
+  z.textContent = "z";
+  z.style.transform = `translate(${Math.round(state.x + 10)}px, ${Math.round(state.y - 30)}px)`;
+  layer.appendChild(z);
+  setTimeout(() => z.remove(), 1800);
 }
 
 function heart(): void {
@@ -90,7 +104,9 @@ function frame(): void {
   world.reducedMotion = reduced.matches;
   const sel = document.getSelection();
   world.paused = !!sel && !sel.isCollapsed;
+  world.hover = hovering;
   tick(state, world);
+  snore(now);
   if (isOffscreen()) {
     // keep thinking (so he can come back) but skip drawing
     setTimeout(frame, OFFSCREEN_POLL_MS);
@@ -111,6 +127,12 @@ function stop(): void {
 }
 
 // only olex's opaque pixels take the pointer, so links under his empty corners stay clickable
+function trackCursor(e: PointerEvent): void {
+  if (e.pointerType !== "mouse") return;
+  const c = world.cursor;
+  if (!c || Math.hypot(e.pageX - c.x, e.pageY - c.y) > 2) world.cursor = { x: e.pageX, y: e.pageY, stillSince: performance.now() };
+}
+
 function hitTest(e: PointerEvent): void {
   // never drop pointer capture mid-gesture
   if (input.active()) return;
@@ -148,9 +170,13 @@ export function start(): void {
       const [x, y] = scruffOffset(yaw);
       return [x * SCALE, y * SCALE];
     },
+    cursor: null,
+    hover: false,
   };
   remeasure();
   state = initState(world);
+  // dev only: lets manual checks poke at his state from the console
+  if (import.meta.env.DEV) Object.assign(window, { __olex: { state, world } });
 
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   addEventListener("resize", () => {
@@ -170,6 +196,8 @@ export function start(): void {
     onPageSwap(state, world);
   });
   document.addEventListener("pointermove", hitTest, { passive: true });
+  document.addEventListener("pointermove", trackCursor, { passive: true });
+  document.documentElement.addEventListener("pointerleave", () => (world.cursor = null));
   input = attachInput(canvas, onGesture);
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   run();

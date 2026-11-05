@@ -43,6 +43,18 @@
     pointer-events: none;
     animation: olex-rise 0.9s ease-out forwards;
   }
+  :global(.olex-z) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--dim);
+    font-size: 12px;
+    pointer-events: none;
+    animation: olex-drift 1.8s ease-out forwards;
+  }
+  @keyframes olex-drift {
+    to { translate: 10px -30px; opacity: 0; }
+  }
   @keyframes olex-rise {
     to { translate: 0 -28px; opacity: 0; }
   }

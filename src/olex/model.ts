@@ -29,7 +29,8 @@ export type RenderOpts = {
   poseT?: number;           // 0..1 blend into the pose
   hang?: number | null;     // screen-plane tilt around the scruff while carried
   hangY?: number;           // buffer row the scruff is drawn at while carried
-  tailWag?: number;         // wag phase in radians
+  tailWag?: number | null;  // wag phase in radians
+  scratch?: number | null;  // back-leg scratch phase while sitting
   ball?: boolean;           // ball held in the mouth
 };
 
@@ -142,6 +143,10 @@ const STEP = 0.4;
 let VOX: Voxel[] = [];
 let legTop = 6;
 let scruff: [number, number, number] = [0, 0, 0];
+// pose pivots in model units, set by build()
+let shoulder: [number, number] = [0, 0];  // sit pivot: top of the front legs
+let bodyY = 0, bodyR = 0, bodyLen = 0;
+let tailC: [number, number] = [0, 0];
 let params: Params = { ...DEFAULTS };
 
 export function build(next: Partial<Params> = {}): void {
@@ -149,6 +154,12 @@ export function build(next: Partial<Params> = {}): void {
   legTop = params.legs * params.height;
   // back of the neck, where olex is held when carried
   scruff = [3.5 + 5.4 * (params.length - 1), (12.5 + params.legs - 6) * params.height, 0];
+  const shift = 5.4 * (params.length - 1);
+  shoulder = [3.3 + shift, legTop];
+  bodyY = (8.6 + params.legs - 6) * params.height;
+  bodyR = 4.4 * params.height;
+  bodyLen = 5.4 * params.length + 4;
+  tailC = [-6.2 - shift, (12 + params.legs - 6) * params.height];
   VOX = [];
   for (const p of parts(params)) {
     const [cx, cy, cz] = p.c;
@@ -198,6 +209,7 @@ export function scruffOffset(yaw: number, pitch = 0.3): [number, number] {
 // renders one frame into a W*H array of colors (null = transparent)
 export function render(W: number, H: number, o: RenderOpts): (string | null)[] {
   const { yaw, pitch = 0.3, walk = null, tongue = true, hang = null, hangY = BUFFER.HANG_Y } = o;
+  const pose = o.pose ?? "stand", t = pose === "stand" ? 0 : Math.max(0, Math.min(1, o.poseT ?? 1));
   const size = params.size;
   const groundY = H - BUFFER.GROUND;
   const ox = W / 2;
@@ -218,6 +230,11 @@ export function render(W: number, H: number, o: RenderOpts): (string | null)[] {
       x += s * 1.4 * k;
       y += Math.max(0, s) * 0.8 * k;
     }
+    if (p.tail && o.tailWag != null) {
+      z += Math.sin(o.tailWag) * 1.6;
+      y += Math.abs(Math.sin(o.tailWag)) * 0.6;
+    }
+    if (t > 0) [x, y, z] = posed(p, x, y, z, pose, t, o.scratch ?? null);
     x = (x - 2) * size; y *= size; z *= size; // centre on the body, not the nose
     const xr = x * cy - z * sy, zr = x * sy + z * cy;
     const yUp = y * cp - zr * sp;
@@ -263,4 +280,48 @@ export function paint(ctx: CanvasRenderingContext2D, out: (string | null)[], W: 
     ctx.fillStyle = c;
     ctx.fillRect(i % W, (i / W) | 0, 1, 1);
   }
+}
+
+const rot = (x: number, y: number, cx: number, cy: number, a: number): [number, number] => {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c];
+};
+
+// moves one voxel into a pose, blended by t
+function posed(p: Part, x: number, y: number, z: number, pose: Pose, t: number, scratch: number | null): [number, number, number] {
+  const frontLeg = p.leg === 0 || p.leg === 1;
+  if (pose === "sit") {
+    // tip the body back around the shoulders; the head stays level and follows the neck
+    const a = 0.6 * t;
+    if (p.g === "head") {
+      const [nx, ny] = rot(shoulder[0] + 2, shoulder[1] + 4, shoulder[0], shoulder[1], a);
+      return [x + nx - (shoulder[0] + 2), y + ny - (shoulder[1] + 4), z];
+    }
+    if (frontLeg) return [x, y, z];
+    let [rx, ry] = rot(x, y, shoulder[0], shoulder[1], a);
+    if (p.leg !== undefined) {
+      // hind legs fold flat under the rump
+      ry = Math.max(ry, 0.6);
+      if (scratch !== null && p.leg === 2) {
+        rx += Math.sin(scratch) * 1.2;
+        ry += 1.5 + Math.abs(Math.sin(scratch));
+      }
+    }
+    return [rx, Math.max(ry, 0), z];
+  }
+  if (pose === "lie") {
+    // roll over around the length axis, settling onto his back
+    const a = Math.PI * t;
+    const c = Math.cos(a), sn = Math.sin(a);
+    const ny = bodyY + (y - bodyY) * c - z * sn;
+    const nz = (y - bodyY) * sn + z * c;
+    return [x, ny - (bodyY - bodyR) * (1 - c) / 2, nz];
+  }
+  // curl: tuck the legs, lower the body, bend nose toward tail
+  let ny = y;
+  if (p.leg !== undefined) ny = y * (1 - 0.7 * t);
+  else ny = y - legTop * 0.7 * t - (p.g === "head" ? 2 * t : 0);
+  const k = (0.9 / bodyLen) * t;
+  if (k === 0) return [x, ny, z];
+  return [Math.sin(k * x) / k, ny, z + (1 - Math.cos(k * x)) / k];
 }

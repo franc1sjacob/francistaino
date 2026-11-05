@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { initState, tick, onPageSwap, handle, type World, type State } from "../../src/olex/brain";
+import { initState, tick, onPageSwap, handle, pickIdle, type World, type State } from "../../src/olex/brain";
 import type { Platform } from "../../src/olex/world";
 
 const text = (x1: number, x2: number, y: number): Platform => ({ x1, x2, y, kind: "text" });
@@ -8,7 +8,7 @@ const floor: Platform = { x1: 0, x2: 1000, y: 900, kind: "floor" };
 export function world(plats: Platform[], over: Partial<World> = {}): World {
   return {
     plats, view: { top: 0, bottom: 1000 }, now: 0, reducedMotion: false, paused: false, rand: () => 0.9,
-    scruff: (yaw) => [10 * Math.cos(yaw), 30], ...over,
+    scruff: (yaw) => [10 * Math.cos(yaw), 30], cursor: null, hover: false, ...over,
   };
 }
 
@@ -179,4 +179,64 @@ test("grabbing him mid-hop cancels the hop", () => {
   handle(s, { kind: "dragStart", x: s.x, y: s.y - 30 }, w);
   expect(s.mode).toBe("carried");
   expect(s.hop).toBeNull();
+});
+
+test("idle behaviors never repeat back to back", () => {
+  const w = world([text(100, 300, 400), floor]);
+  const s = initState(w);
+  const seq = [0, 0, 0.3, 0.3, 0.99, 0.99, 0.5, 0.1, 0.1, 0.7];
+  let prev = "";
+  for (let i = 0; i < 40; i++) {
+    const idle = pickIdle(s, () => seq[i % seq.length]);
+    expect(idle).not.toBe(prev);
+    prev = idle;
+  }
+});
+
+test("after 30s without interaction he curls up for a nap, and a pet wakes him", () => {
+  const w = world([text(100, 300, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk" });
+  run(s, w, 1700); // ~27s
+  expect(s.idle).not.toBe("nap");
+  run(s, w, 300); // past 30s
+  expect(s.idle).toBe("nap");
+  run(s, w, 30);
+  expect(s.pose).toBe("curl");
+  handle(s, { kind: "pet" }, w);
+  run(s, w, 30);
+  expect(s.idle).not.toBe("nap");
+});
+
+test("he notices a cursor resting nearby for a second and trots over", () => {
+  const w = world([text(100, 600, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk", dir: 1 });
+  w.cursor = { x: 340, y: 360, stillSince: 0 };
+  run(s, w, 30); // ~0.5s still: not yet
+  expect(s.idle).not.toBe("notice");
+  run(s, w, 40); // past 1s
+  expect(s.idle).toBe("notice");
+  run(s, w, 200);
+  expect(Math.abs(s.x - 340)).toBeLessThan(40);
+});
+
+test("he ignores a cursor resting far away", () => {
+  const w = world([text(100, 900, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk", dir: 1 });
+  w.cursor = { x: 600, y: 300, stillSince: 0 };
+  run(s, w, 150);
+  expect(s.idle).not.toBe("notice");
+});
+
+test("hovering makes his tail wag", () => {
+  const w = world([text(100, 300, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk" });
+  run(s, w, 5);
+  expect(s.wag).toBeNull();
+  w.hover = true;
+  run(s, w, 5);
+  expect(s.wag).not.toBeNull();
 });
