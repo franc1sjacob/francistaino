@@ -11,8 +11,10 @@
     position: absolute;
     left: 0;
     top: 0;
-    width: 0;
+    width: 100%;
     height: 0;
+    /* his canvas is wider than he is; never let it widen the page on phones */
+    overflow-x: clip;
     pointer-events: none;
     z-index: 5;
   }
