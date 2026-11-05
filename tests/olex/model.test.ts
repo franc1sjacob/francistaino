@@ -93,3 +93,19 @@ test("carrying the ball adds it at his mouth", () => {
   expect(added).toBeGreaterThan(2);
   expect(behindHead).toBe(0);
 });
+
+test("head wobble tilts only the head, not the body", () => {
+  const still = render(W, H, { yaw: Math.PI / 2 });
+  const tilted = render(W, H, { yaw: Math.PI / 2, headTilt: 0.35 });
+  let changed = 0, lowChanged = 0;
+  const body = bounds(still);
+  // facing you, his big head and hanging ears cover most of him; the bottom quarter is legs
+  const neckRow = body.top + Math.round(body.height * 0.75);
+  for (let i = 0; i < W * H; i++)
+    if (still[i] !== tilted[i]) {
+      changed++;
+      if (Math.floor(i / W) > neckRow) lowChanged++;
+    }
+  expect(changed).toBeGreaterThan(10);
+  expect(lowChanged).toBe(0);
+});

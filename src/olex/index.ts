@@ -77,6 +77,7 @@ function draw(): void {
     tailWag: state.wag,
     ball: state.fetch?.phase === "carry",
     scratch: state.idle === "scratch" && state.poseT > 0.9 ? state.phase : null,
+    headTilt: m === "dizzy" && !world.reducedMotion ? Math.sin(state.phase) * 0.3 : 0,
     pose: state.pose,
     poseT: state.poseT,
     hang: airborne ? state.swingA : null,

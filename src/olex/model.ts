@@ -32,6 +32,7 @@ export type RenderOpts = {
   tailWag?: number | null;  // wag phase in radians
   scratch?: number | null;  // back-leg scratch phase while sitting
   ball?: boolean;           // ball held in the mouth
+  headTilt?: number;        // radians: tips the head side to side (as seen facing you) around the neck
 };
 
 export const BUFFER = { W: 64, H: 56, HANG_Y: 18, GROUND: 2 };
@@ -149,6 +150,7 @@ let scruff: [number, number, number] = [0, 0, 0];
 let shoulder: [number, number] = [0, 0];  // sit pivot: top of the front legs
 let bodyY = 0, bodyR = 0, bodyLen = 0;
 let tailC: [number, number] = [0, 0];
+let neck: [number, number] = [0, 0];       // head tilt pivot (x, y)
 let params: Params = { ...DEFAULTS };
 
 export function build(next: Partial<Params> = {}): void {
@@ -162,6 +164,7 @@ export function build(next: Partial<Params> = {}): void {
   bodyR = 4.4 * params.height;
   bodyLen = 5.4 * params.length + 4;
   tailC = [-6.2 - shift, (12 + params.legs - 6) * params.height];
+  neck = [NECK[0] + shift, (NECK[1] + params.legs - 6) * params.height];
   VOX = [];
   for (const p of parts(params)) {
     const [cx, cy, cz] = p.c;
@@ -239,6 +242,13 @@ export function render(W: number, H: number, o: RenderOpts): (string | null)[] {
       y += Math.abs(Math.sin(o.tailWag)) * 0.6;
     }
     if (t > 0) [x, y, z] = posed(p, x, y, z, pose, t, o.scratch ?? null);
+    if (o.headTilt && p.g === "head") {
+      // roll the head around the neck, along his length: side to side when he faces you
+      const c = Math.cos(o.headTilt), sn = Math.sin(o.headTilt);
+      const dy = y - neck[1];
+      y = neck[1] + dy * c - z * sn;
+      z = dy * sn + z * c;
+    }
     x = (x - 2) * size; y *= size; z *= size; // centre on the body, not the nose
     const xr = x * cy - z * sy, zr = x * sy + z * cy;
     const yUp = y * cp - zr * sp;

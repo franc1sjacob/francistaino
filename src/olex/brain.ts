@@ -293,6 +293,7 @@ export function tick(s: State, w: World): void {
         if (s.mode === "shake") s.timer = SHAKE_TICKS;
         if (s.mode === "dizzy") {
           s.timer = DIZZY_TICKS;
+          s.phase = 0;
           s.dizzy = false;
           s.events.push("stars");
         }
@@ -852,18 +853,15 @@ function trackTurning(s: State, dx: number, dy: number, now: number): void {
   if (total >= DIZZY_CIRCLES * Math.PI * 2) s.dizzy = true;
 }
 
+const HEAD_WOBBLE_RATE = 0.07; // rad per tick: one slow wobble every ~1.5s
+
 function stepDizzy(s: State, w: World): void {
   if (w.reducedMotion) {
-    s.targetYaw = s.yaw; // stunned, but holding still
+    s.targetYaw = s.yaw; // stunned, but holding completely still
   } else {
-    // sway, bob, and stumble a little, facing roughly toward you
-    s.targetYaw = Math.PI / 2 + Math.sin(s.timer * 0.22) * 0.6;
-    const p = w.plats[s.plat];
-    const step = Math.sin(s.timer * 0.09) * 0.5;
-    if (p && s.x + step > p.x1 + EDGE && s.x + step < p.x2 - EDGE) {
-      s.x += step;
-      s.walk += WALK_RATE * 0.6;
-    }
+    // body stays put facing you; only the head wobbles, slowly, like in the cartoons
+    s.targetYaw = Math.PI / 2;
+    s.phase += HEAD_WOBBLE_RATE;
   }
   if (--s.timer <= 0) {
     // shake it off and carry on

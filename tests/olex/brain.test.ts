@@ -690,3 +690,19 @@ test("dizzy: with reduced motion he does not wobble", () => {
   expect(s.yaw).toBeCloseTo(yaw, 5);
   expect(s.x).toBe(x);
 });
+
+test("dizzy: his body stays put facing you; only the head wobble phase moves, slowly", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, circles(3));
+  for (let i = 0; i < 200 && s.mode !== "dizzy"; i++) run(s, w, 1);
+  expect(s.mode).toBe("dizzy");
+  run(s, w, 20); // finish turning to face you
+  const x = s.x, yaw = s.yaw, phase = s.phase;
+  run(s, w, 60);
+  expect(s.x).toBe(x);
+  expect(s.yaw).toBeCloseTo(yaw, 5);
+  expect(s.yaw).toBeCloseTo(Math.PI / 2, 1);
+  // about one slow wobble per second and a half: 60 ticks moves the phase by well under a full turn and a half
+  expect(s.phase - phase).toBeGreaterThan(2);
+  expect(s.phase - phase).toBeLessThan(6);
+});
