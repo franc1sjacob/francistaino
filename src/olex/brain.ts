@@ -106,6 +106,9 @@ export function initState(w: World): State {
 
 const spans = (p: Platform, x: number) => x >= p.x1 - EDGE && x <= p.x2 + EDGE;
 
+// modes worth resuming after a fall caused by the page moving under him
+const resumable = (m: Mode): Mode | null => (m === "command" || m === "fetch" || m === "goingHome" ? m : null);
+
 // keeps him attached to his platform across re-measures; false if nothing holds him up
 function supported(s: State, w: World): boolean {
   const p = w.plats[s.plat];
@@ -179,6 +182,12 @@ function stepFallMode(s: State, w: World): void {
     s.y = w.plats[hit].y;
     s.mode = s.after ?? "walk";
     s.after = null;
+    // whatever he was doing did not survive the fall
+    if (s.mode !== "fetch") s.fetch = null;
+    if (s.mode !== "command") {
+      s.cmd = null;
+      s.treat = null;
+    }
     if (s.mode === "walk") s.targetYaw = facingYaw(s.dir);
   } else if (s.y > w.view.bottom + 3000 || platformUnder(w.plats, s.x, s.y) < 0) {
     dropIn(s, w); // nothing below to land on
@@ -193,13 +202,13 @@ function dropIn(s: State, w: World): void {
   s.x = Math.min(Math.max(s.x, p.x1 + EDGE), p.x2 - EDGE);
   s.y = w.view.top - DOG_HEIGHT;
   s.offscreenSince = null;
-  startFall(s);
+  startFall(s, s.mode === "fall" ? s.after : resumable(s.mode));
 }
 
 // a new page was swapped in under him: fall onto what is below if it is on screen, else drop into view
 export function onPageSwap(s: State, w: World): void {
   const under = platformUnder(w.plats, s.x, s.y);
-  if (under >= 0 && w.plats[under].y <= w.view.bottom - DOG_HEIGHT) startFall(s);
+  if (under >= 0 && w.plats[under].y <= w.view.bottom - DOG_HEIGHT) startFall(s, resumable(s.mode));
   else dropIn(s, w);
 }
 
@@ -235,7 +244,7 @@ export function tick(s: State, w: World): void {
   }
 
   const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command", "fetch", "goingHome", "comingOut"].includes(s.mode);
-  if (grounded && !supported(s, w)) startFall(s);
+  if (grounded && !supported(s, w)) startFall(s, resumable(s.mode));
 
   switch (s.mode) {
     case "walk":
@@ -325,8 +334,9 @@ function stepCarried(s: State, w: World): void {
   s.pivot.y += (s.pointer.y - s.pivot.y) * 0.5;
   const sw = { a: s.swingA, v: s.swingV };
   stepPendulum(sw, CARRY_REST * Math.cos(s.yaw), s.pointer.vx);
-  s.swingA = sw.a;
-  s.swingV = sw.v;
+  // reduced motion: carried without swinging
+  s.swingA = w.reducedMotion ? 0 : sw.a;
+  s.swingV = w.reducedMotion ? 0 : sw.v;
   s.pointer.vx *= 0.6;
   s.walk += 0.06; // paddling
   feetFromPivot(s, w);
@@ -515,8 +525,11 @@ function startCommand(s: State, cmd: Cmd, timer = Infinity): void {
   s.timer = timer;
 }
 
+const ENERGETIC: Command[] = ["zoomies", "spin", "roll over", "follow me"];
+
 export function runCommand(s: State, c: Command, w: World): void {
   s.lastInteraction = w.now;
+  if (w.reducedMotion && ENERGETIC.includes(c)) c = "sit"; // calm stand-in for big motion
   if (s.cmd) endCommand(s);
   if (s.fetch) endFetch(s);
   s.idle = null;

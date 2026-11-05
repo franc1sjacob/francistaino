@@ -4,6 +4,7 @@
 import type { Store } from "./store";
 
 const SEND_EVERY_MS = 3000;
+const MAX_BACKOFF_MS = 60_000;
 const MAX_BATCH = 20;
 const TIMEOUT_MS = 2000;
 
@@ -21,6 +22,7 @@ export function createPetCounter(d: Deps) {
   let total: number | null = null;
   let lastSent = -Infinity;
   let inflight = 0;            // pets in the request currently on the wire
+  let failures = 0;            // consecutive failed sends, for backoff
 
   async function request(init?: RequestInit): Promise<Response> {
     const ctrl = new AbortController();
@@ -45,7 +47,9 @@ export function createPetCounter(d: Deps) {
     },
 
     async flush(): Promise<void> {
-      if (!d.url || !queued || inflight || d.now() - lastSent < SEND_EVERY_MS) return;
+      // back off while the service is failing: 3s, 6s, 12s... up to a minute
+      const wait = Math.min(MAX_BACKOFF_MS, SEND_EVERY_MS * 2 ** failures);
+      if (!d.url || !queued || inflight || d.now() - lastSent < wait) return;
       const n = Math.min(queued, MAX_BATCH);
       inflight = n;
       lastSent = d.now();
@@ -54,10 +58,15 @@ export function createPetCounter(d: Deps) {
         if (res.ok || res.status === 429) {
           // accepted, or refused for good (rate limited): either way these pets are settled
           queued -= n;
+          failures = 0;
           await readTotal(res);
-        } else total = null;
+        } else {
+          total = null;
+          failures++;
+        }
       } catch {
-        total = null; // offline or timed out: keep the pets and try again next time
+        total = null; // offline or timed out: keep the pets and try again later
+        failures++;
       } finally {
         inflight = 0;
       }

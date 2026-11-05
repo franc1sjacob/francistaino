@@ -2,6 +2,7 @@
 
 import { build, render, paint, scruffOffset, BUFFER } from "./model";
 import { attachInput, type Gesture } from "./input";
+import { opaqueAt } from "./hit";
 import { measure, measureHouse, type Platform } from "./world";
 import { store } from "./store";
 import { createPetCounter } from "./pets";
@@ -27,7 +28,7 @@ let origin = { x: 0, y: 0 };   // document position of the canvas' top-left
 let lastMeasure = 0;
 let running = false;
 let hovering = false;
-let input: { active: () => boolean };
+let input: ReturnType<typeof attachInput>;
 let tag: HTMLElement;
 let layer: HTMLElement;
 let tagCounts: HTMLElement;
@@ -276,13 +277,12 @@ function trackCursor(e: PointerEvent): void {
   if (!c || Math.hypot(e.pageX - c.x, e.pageY - c.y) > 2) world.cursor = { x: e.pageX, y: e.pageY, stillSince: performance.now() };
 }
 
+const onOlex = (x: number, y: number) => opaqueAt({ out: lastOut, W: BUFFER.W, H: BUFFER.H, origin, scale: SCALE }, x, y);
+
 function hitTest(e: PointerEvent): void {
   // never drop pointer capture mid-gesture
   if (input.active()) return;
-  const { W, H } = BUFFER;
-  const px = Math.floor((e.pageX - origin.x) / SCALE);
-  const py = Math.floor((e.pageY - origin.y) / SCALE);
-  const hit = px >= 0 && py >= 0 && px < W && py < H && !!lastOut[py * W + px];
+  const hit = onOlex(e.pageX, e.pageY);
   canvas.style.pointerEvents = hit ? "auto" : "none";
   hovering = hit;
 }
@@ -369,6 +369,19 @@ export function start(): void {
   document.addEventListener("pointermove", trackCursor, { passive: true });
   document.documentElement.addEventListener("pointerleave", () => (world.cursor = null));
   input = attachInput(canvas, onGesture);
+  // touch has no hover, so the canvas is never enabled ahead of a tap: catch presses on his pixels here first
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" || e.target === canvas || canvas.style.visibility === "hidden") return;
+    if (!onOlex(e.pageX, e.pageY)) return;
+    e.stopPropagation(); // the page under him should not see this press
+    canvas.style.pointerEvents = "auto";
+    input.begin(e);
+  }, { capture: true });
+  // and stop that touch from scrolling the page or turning into a click on whatever is under him
+  document.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    if (t && canvas.style.visibility !== "hidden" && onOlex(t.pageX, t.pageY)) e.preventDefault();
+  }, { passive: false });
   document.addEventListener("pointerdown", (e) => {
     if (e.target !== canvas) clickAnywhere(state, world);
   });

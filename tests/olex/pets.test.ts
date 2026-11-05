@@ -78,7 +78,7 @@ test("if the service is down, pets are kept, the total hides, and the next flush
   await counter.flush();
   expect(counter.label()).toBe("♥ 3 from you");
   down = false;
-  tick(3000);
+  tick(6000); // one failure backs off to 6s
   await counter.flush();
   expect(calls.filter((c) => c.method === "POST").map((c) => c.n)).toEqual([3, 3]);
   expect(counter.label()).toBe("♥ 3 from you · 53 total");
@@ -139,4 +139,29 @@ test("leaving mid-request does not beacon the pets already being sent", async ()
   expect(beacons).toEqual([JSON.stringify({ n: 1 })]);
   release();
   await sending;
+});
+
+test("review: when the service keeps failing, retries back off instead of hammering it", async () => {
+  const { counter, calls, tick } = setup({ respond: async () => new Response("down", { status: 503 }) });
+  counter.pet();
+  for (let i = 0; i < 60; i++) { tick(1000); await counter.flush(); } // a minute of 1s flush ticks
+  const posts = calls.filter((c) => c.method === "POST").length;
+  expect(posts).toBeLessThanOrEqual(6); // 3s, 6s, 12s, 24s, 48s... not 20
+  expect(posts).toBeGreaterThanOrEqual(3);
+});
+
+test("review: a success resets the backoff", async () => {
+  let fail = true;
+  const { counter, calls, tick } = setup({
+    respond: async () => (fail ? new Response("down", { status: 503 }) : new Response(JSON.stringify({ total: 1 }))),
+  });
+  counter.pet();
+  for (let i = 0; i < 30; i++) { tick(1000); await counter.flush(); }
+  fail = false;
+  for (let i = 0; i < 60; i++) { tick(1000); await counter.flush(); }
+  const before = calls.filter((c) => c.method === "POST").length;
+  counter.pet();
+  tick(3000);
+  await counter.flush();
+  expect(calls.filter((c) => c.method === "POST").length).toBe(before + 1);
 });

@@ -467,3 +467,56 @@ test("a fall with nothing at all below him drops him back into view straight awa
   expect(s.plat).toBe(0);
   expect(s.y).toBe(150);
 });
+
+test("review: if his line shifts while he heads home, he still gets home", () => {
+  const f = { ...floor, y: 900 };
+  const { s, w } = withHouse([text(100, 600, 400), f], { x1: 880, x2: 912, y: 900 });
+  Object.assign(s, { plat: 0, x: 300, y: 400, mode: "walk" });
+  runCommand(s, "go home", w);
+  run(s, w, 20);
+  w.plats = [text(100, 600, 380), f]; // a font loads and the line moves up 20px
+  run(s, w, 480);
+  expect(s.mode).toBe("home");
+});
+
+test("review: if his line shifts mid-fetch, he keeps playing", () => {
+  const w = world([text(100, 900, 400), floor], { cursor: { x: 200, y: 360, stillSince: 0 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk" });
+  runCommand(s, "fetch", w);
+  throwBall(s, { x: 600, y: 400, vx: 0, vy: 0, resting: true }, w);
+  run(s, w, 10);
+  w.plats = [text(100, 900, 385), floor];
+  run(s, w, 80); // falls to the floor, then carries on
+  expect(s.mode).toBe("fetch");
+});
+
+test("review: after a page swap mid-fetch he keeps playing", () => {
+  const w = world([text(100, 900, 400), floor], { cursor: { x: 200, y: 360, stillSince: 0 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk" });
+  runCommand(s, "fetch", w);
+  w.plats = [text(100, 900, 600), floor];
+  onPageSwap(s, w);
+  run(s, w, 100);
+  expect(s.mode).toBe("fetch");
+});
+
+test("review: with reduced motion, energetic commands become a calm sit", () => {
+  for (const c of ["zoomies", "spin", "roll over", "follow me"] as const) {
+    const { s, w } = onLine({ reducedMotion: true });
+    runCommand(s, c, w);
+    run(s, w, 60);
+    expect(s.cmd).toBe("sit");
+    expect(s.mode).not.toBe("spin");
+    expect(s.x).toBe(300);
+  }
+});
+
+test("review: with reduced motion, carrying him does not swing", () => {
+  const { s, w } = onLine({ reducedMotion: true });
+  handle(s, { kind: "dragStart", x: 310, y: 370 }, w);
+  handle(s, { kind: "dragMove", x: 400, y: 370, vx: 60 }, w);
+  run(s, w, 30);
+  expect(s.swingA).toBe(0);
+});

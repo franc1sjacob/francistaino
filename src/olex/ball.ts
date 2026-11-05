@@ -38,6 +38,15 @@ export function setBall(layer: HTMLElement, at: { x: number; y: number } | null)
   b.style.transform = `translate(${Math.round(at.x - half)}px, ${Math.round(at.y - half * 2)}px)`;
 }
 
+const THROW_PX = 6;
+
+// a release only throws if the pointer actually moved; a plain click passes through to the page
+export function isThrow(samples: { x: number; y: number }[]): boolean {
+  if (samples.length < 2) return false;
+  const a = samples[0], b = samples[samples.length - 1];
+  return Math.hypot(b.x - a.x, b.y - a.y) > THROW_PX;
+}
+
 // while `armed()` is true, a press-and-release anywhere except on olex throws the ball
 export function attachThrow(opts: {
   armed: () => boolean;
@@ -49,6 +58,7 @@ export function attachThrow(opts: {
   let swallowClick = false;
 
   document.addEventListener("pointerdown", (e) => {
+    swallowClick = false; // never let a stale flag eat an unrelated click later
     if (!opts.armed() || e.target === opts.olex || e.button !== 0) return;
     e.preventDefault(); // no text selection while winding up
     samples = [{ x: e.pageX, y: e.pageY, t: e.timeStamp }];
@@ -61,8 +71,10 @@ export function attachThrow(opts: {
   document.addEventListener("pointerup", (e) => {
     if (!samples) return;
     samples.push({ x: e.pageX, y: e.pageY, t: e.timeStamp });
+    const flicked = isThrow(samples);
     const { vx, vy } = throwVelocity(samples);
     samples = null;
+    if (!flicked) return;
     swallowClick = true; // the release must not also follow a link
     opts.onThrow({ x: e.pageX, y: e.pageY, vx, vy, resting: false });
   });

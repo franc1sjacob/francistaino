@@ -65,13 +65,19 @@ export function createGestureTracker(opts: { dragPx: number; longPressMs: number
   };
 }
 
-export function attachInput(canvas: HTMLCanvasElement, onGesture: (g: Gesture) => void): { active: () => boolean } {
+export function attachInput(
+  canvas: HTMLCanvasElement,
+  onGesture: (g: Gesture) => void,
+): { active: () => boolean; begin: (e: PointerEvent) => void } {
   const tracker = createGestureTracker({ dragPx: 4, longPressMs: 500 });
   let timer: ReturnType<typeof setInterval> | undefined;
   const emit = (gs: Gesture[]) => gs.forEach(onGesture);
   const stopTimer = () => clearInterval(timer);
 
-  canvas.addEventListener("pointerdown", (e) => {
+  // starts a gesture; also called for touches caught on the document, since touch has no hover to enable the canvas first
+  const begin = (e: PointerEvent) => {
+    // a mouse drag on olex must not start a text selection on the page around him
+    if (e.pointerType === "mouse" && e.button === 0) e.preventDefault();
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -80,7 +86,8 @@ export function attachInput(canvas: HTMLCanvasElement, onGesture: (g: Gesture) =
     emit(tracker.down(e.pageX, e.pageY, e.timeStamp, e.button, e.pointerType === "touch"));
     stopTimer();
     timer = setInterval(() => emit(tracker.tick(performance.now())), 50);
-  });
+  };
+  canvas.addEventListener("pointerdown", begin);
   canvas.addEventListener("pointermove", (e) => emit(tracker.move(e.pageX, e.pageY, e.timeStamp)));
   canvas.addEventListener("pointerup", (e) => {
     stopTimer();
@@ -94,5 +101,5 @@ export function attachInput(canvas: HTMLCanvasElement, onGesture: (g: Gesture) =
   canvas.addEventListener("lostpointercapture", cancel);
   // the browser menu is only replaced over olex himself
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-  return { active: () => tracker.active };
+  return { active: () => tracker.active, begin };
 }
