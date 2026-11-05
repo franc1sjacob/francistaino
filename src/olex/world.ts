@@ -6,6 +6,7 @@ export type View = { top: number; bottom: number };
 const SELECTOR = "main h1, main h2, main h3, main p, main li, main .line, main .item, main .tagline, main blockquote, main pre, main img";
 const MIN_WIDTH = 24;
 const REACH_X = 40;
+const JOIN_GAP = 24;
 
 // one platform per rendered text line (or box, for pre/img), plus the footer line as the floor
 export function measure(doc: Document): Platform[] {
@@ -22,21 +23,22 @@ export function measure(doc: Document): Platform[] {
   }
   const ps: Platform[] = [];
   for (const r of rects) {
-    if (r.width < MIN_WIDTH || r.height === 0) continue;
+    if (r.width === 0 || r.height === 0) continue;
     const p: Platform = { x1: r.left + sx, x2: r.right + sx, y: Math.round(r.top + sy), kind: "text" };
-    // nested elements (an .item inside a p, inline spans) produce overlapping rects on one line
-    const same = ps.find((q) => Math.abs(q.y - p.y) <= 2 && p.x1 <= q.x2 && p.x2 >= q.x1);
+    // nested elements and label/value rows produce several rects per line; join them into one walkway
+    const same = ps.find((q) => Math.abs(q.y - p.y) <= 2 && p.x1 <= q.x2 + JOIN_GAP && p.x2 >= q.x1 - JOIN_GAP);
     if (same) {
       same.x1 = Math.min(same.x1, p.x1);
       same.x2 = Math.max(same.x2, p.x2);
     } else ps.push(p);
   }
+  const walkable = ps.filter((p) => p.x2 - p.x1 >= MIN_WIDTH);
   const footer = doc.querySelector(".site-footer");
   if (footer) {
     const r = footer.getBoundingClientRect();
-    ps.push({ x1: r.left + sx, x2: r.right + sx, y: Math.round(r.top + sy), kind: "floor" });
+    walkable.push({ x1: r.left + sx, x2: r.right + sx, y: Math.round(r.top + sy), kind: "floor" });
   }
-  return ps;
+  return walkable;
 }
 
 const spans = (p: Platform, x: number) => x >= p.x1 && x <= p.x2;
