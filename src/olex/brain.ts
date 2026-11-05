@@ -8,7 +8,7 @@ import { landingCrossed, nearestVisible, platformUnder, reachable, type Platform
 
 export type Mode =
   | "walk" | "turn" | "hop" | "idle" | "fall" | "carried" | "drop" | "shake" | "pet" | "spin"
-  | "command" | "fetch" | "home" | "goingHome";
+  | "command" | "fetch" | "home" | "goingHome" | "comingOut";
 
 export type Idle = "sit" | "scratch" | "yawn" | "nap" | "notice";
 export type Cmd = "sit" | "roll" | "treat" | "follow" | "zoomies" | "flop";
@@ -46,6 +46,7 @@ export type State = {
   treat: { x: number } | null;
   events: Event[];      // one-shot effects for the page to show, cleared each tick
   fetch: { phase: "wait" | "chase" | "carry"; ball: Ball | null; home: { x: number; y: number } } | null;
+  after: Mode | null;   // mode to resume after landing from a fall
 };
 
 export type World = {
@@ -59,6 +60,7 @@ export type World = {
   cursor: { x: number; y: number; stillSince: number } | null;
   hover: boolean;
   bounds: { left: number; right: number };    // page edges the ball bounces off
+  house: { x1: number; x2: number; y: number } | null;  // his doghouse, standing on the floor
 };
 
 const SPEED = 0.9;
@@ -98,7 +100,7 @@ export function initState(w: World): State {
     lastInteraction: w.now, offscreenSince: null,
     swingA: 0, swingV: 0, pivot: { x: 0, y: 0 }, pointer: { x: 0, y: 0, vx: 0 }, pets: [],
     idle: null, lastIdle: null, nextIdleAt: w.now + IDLE_EVERY_MS, noticeCooldown: 0,
-    poseGoal: "stand", phase: 0, wag: null, cmd: null, treat: null, events: [], fetch: null,
+    poseGoal: "stand", phase: 0, wag: null, cmd: null, treat: null, events: [], fetch: null, after: null,
   };
 }
 
@@ -118,10 +120,11 @@ function supported(s: State, w: World): boolean {
   return true;
 }
 
-export function startFall(s: State): void {
+export function startFall(s: State, after: Mode | null = null): void {
   s.mode = "fall";
   s.fallV = 0;
   s.hop = null;
+  s.after = after;
 }
 
 function easeYaw(s: State): void {
@@ -129,9 +132,18 @@ function easeYaw(s: State): void {
   s.yaw += Math.sign(d) * Math.min(Math.abs(d), YAW_STEP);
 }
 
+const MAX_HOP_DROP = 160;
+
 function startHop(s: State, w: World, to: number, o: { dur?: number; h?: number; then?: Mode } = {}): void {
   const t = w.plats[to];
   const tx = Math.min(Math.max(s.x, t.x1 + EDGE), t.x2 - EDGE);
+  if (t.y - s.y > MAX_HOP_DROP) {
+    // too far down to hop: step off the edge he is facing and fall for real
+    const here = w.plats[s.plat];
+    if (here) s.x = s.dir > 0 ? here.x2 + 2 : here.x1 - 2;
+    startFall(s, o.then ?? null);
+    return;
+  }
   s.hop = { fx: s.x, fy: s.y, tx, ty: t.y, t: 0, dur: o.dur ?? HOP_TICKS, h: o.h ?? HOP_HEIGHT, to, then: o.then };
   s.mode = "hop";
 }
@@ -165,10 +177,11 @@ function stepFallMode(s: State, w: World): void {
   if (hit >= 0) {
     s.plat = hit;
     s.y = w.plats[hit].y;
-    s.mode = "walk";
-    s.targetYaw = facingYaw(s.dir);
-  } else if (s.y > w.view.bottom + 3000) {
-    dropIn(s, w); // fell off the world somehow
+    s.mode = s.after ?? "walk";
+    s.after = null;
+    if (s.mode === "walk") s.targetYaw = facingYaw(s.dir);
+  } else if (s.y > w.view.bottom + 3000 || platformUnder(w.plats, s.x, s.y) < 0) {
+    dropIn(s, w); // nothing below to land on
   }
 }
 
@@ -202,6 +215,7 @@ function trackOffscreen(s: State, w: World): void {
 
 export function tick(s: State, w: World): void {
   s.events = [];
+  if (s.mode === "home") return; // inside the house: nothing to do
   easeYaw(s);
   trackOffscreen(s, w);
 
@@ -220,7 +234,7 @@ export function tick(s: State, w: World): void {
     else if (s.mode === "walk" && w.now >= s.nextIdleAt) startIdle(s, w, pickIdle(s, w.rand));
   }
 
-  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command", "fetch"].includes(s.mode);
+  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command", "fetch", "goingHome", "comingOut"].includes(s.mode);
   if (grounded && !supported(s, w)) startFall(s);
 
   switch (s.mode) {
@@ -235,6 +249,14 @@ export function tick(s: State, w: World): void {
       break;
     case "fetch":
       stepFetch(s, w);
+      break;
+    case "goingHome":
+      stepGoingHome(s, w);
+      break;
+    case "comingOut":
+      s.x -= SPEED * 1.2;
+      s.walk += WALK_RATE * 1.2;
+      if (w.house && s.x < w.house.x1 - 20) s.mode = "walk";
       break;
     case "turn":
       if (Math.abs(s.targetYaw - s.yaw) < 0.01) {
@@ -536,7 +558,8 @@ export function runCommand(s: State, c: Command, w: World): void {
       s.targetYaw = Math.PI / 2;
       break;
     case "go home":
-      break; // wired up by the home task
+      goHome(s, w);
+      break;
   }
 }
 
@@ -626,7 +649,7 @@ function dist(p: Platform, c: { x: number; y: number }): number {
 }
 
 const CHASE_SPEED = 2.4;
-const LEAP = { dur: 40, h: 60, then: "fetch" as Mode };
+const LEAP = { dur: 40, h: 60 };
 
 // the ball left the cursor: chase it
 export function throwBall(s: State, ball: Ball, w: World): void {
@@ -645,15 +668,16 @@ export function endFetch(s: State): void {
 
 // head for point p across platforms: walk on this one, hop toward it, or leap if nothing is reachable.
 // true once he stands next to it.
-function goTo(s: State, w: World, p: { x: number; y: number }, near: number, leap: boolean): boolean {
+function goTo(s: State, w: World, p: { x: number; y: number }, near: number, leap: boolean, speed = CHASE_SPEED): boolean {
   const target = platformUnder(w.plats, p.x, p.y - 1);
-  if (target === s.plat || target < 0) return walkToward(s, w, p.x, CHASE_SPEED, near);
-  if (!walkToward(s, w, p.x, CHASE_SPEED, near)) return false;
+  if (target === s.plat || target < 0) return walkToward(s, w, p.x, speed, near);
+  if (!walkToward(s, w, p.x, speed, near)) return false;
   // at the edge (or under it): find a platform that gets closer
+  const then = s.mode;
   const here = dist(w.plats[s.plat], p);
   const best = reachable(w.plats, s.plat, MAX_CLIMB).sort((a, b) => dist(w.plats[a], p) - dist(w.plats[b], p))[0];
-  if (best !== undefined && dist(w.plats[best], p) < here) startHop(s, w, best, { then: "fetch" });
-  else if (leap) startHop(s, w, target, LEAP);
+  if (best !== undefined && dist(w.plats[best], p) < here) startHop(s, w, best, { then });
+  else if (leap) startHop(s, w, target, { ...LEAP, then });
   return false;
 }
 
@@ -689,4 +713,52 @@ function stepFetch(s: State, w: World): void {
       s.targetYaw = Math.PI / 2;
     }
   }
+}
+
+const DASH_DISTANCE = 700;
+
+const door = (h: NonNullable<World["house"]>) => ({ x: (h.x1 + h.x2) / 2, y: h.y });
+
+function enterHome(s: State, w: World): void {
+  const h = w.house!;
+  const d = door(h);
+  s.x = d.x;
+  s.y = d.y;
+  s.plat = platformUnder(w.plats, d.x, d.y - 1);
+  s.hop = null;
+  s.mode = "home";
+}
+
+function goHome(s: State, w: World): void {
+  if (!w.house) return;
+  s.idle = null;
+  s.poseGoal = "stand";
+  if (w.reducedMotion) return enterHome(s, w);
+  s.mode = "goingHome";
+}
+
+function stepGoingHome(s: State, w: World): void {
+  if (!w.house) return turnTo(s, facingYaw(s.dir));
+  const d = door(w.house);
+  // a long way from home: dash there like zoomies so it never takes long
+  const speed = Math.hypot(d.x - s.x, d.y - s.y) > DASH_DISTANCE ? ZOOMIES_SPEED : CHASE_SPEED;
+  if (goTo(s, w, d, 3, true, speed)) enterHome(s, w);
+}
+
+// clicking the house or the nav toggle brings him back out
+export function callOut(s: State, w: World): void {
+  if (s.mode !== "home" || !w.house) return;
+  const d = door(w.house);
+  s.lastInteraction = w.now;
+  s.x = d.x;
+  s.y = d.y;
+  s.plat = Math.max(0, platformUnder(w.plats, d.x, d.y - 1));
+  s.dir = -1;
+  s.yaw = s.targetYaw = Math.PI;
+  if (w.reducedMotion) {
+    s.x = w.house.x1 - 30;
+    s.mode = "idle";
+    return;
+  }
+  s.mode = "comingOut";
 }

@@ -43,3 +43,7 @@ test("nearestVisible prefers platforms inside the viewport, nearest the top thir
   const ps = [text(0, 100, 50), text(0, 100, 1300), text(0, 100, 1600), floor];
   expect(nearestVisible(ps, { top: 1200, bottom: 2000 })).toBe(1);
 });
+
+test("platformUnder never returns a floor that is above the point", () => {
+  expect(platformUnder([text(100, 200, 100), { ...floor, y: 345 }], 800, 716)).toBe(-1);
+});

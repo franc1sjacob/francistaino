@@ -1,4 +1,6 @@
 ---
+import OlexHouse from './OlexHouse.astro';
+
 const year = new Date().getFullYear();
 const lastUpdated = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toLowerCase();
 ---
@@ -15,10 +17,12 @@ const lastUpdated = new Date().toLocaleDateString('en-US', { month: 'short', yea
     <span class="sep" aria-hidden="true">·</span>
     <a href="/rss.xml">rss</a>
   </div>
+  <OlexHouse />
 </footer>
 
 <style>
   .site-footer {
+    position: relative;
     max-width: 640px;
     margin: 32px auto 0;
     width: 100%;

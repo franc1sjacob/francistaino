@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, throwBall, endFetch, type World, type State } from "../../src/olex/brain";
+import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, throwBall, endFetch, callOut, startFall, type World, type State } from "../../src/olex/brain";
 import type { Platform } from "../../src/olex/world";
 
 const text = (x1: number, x2: number, y: number): Platform => ({ x1, x2, y, kind: "text" });
@@ -8,7 +8,7 @@ const floor: Platform = { x1: 0, x2: 1000, y: 900, kind: "floor" };
 export function world(plats: Platform[], over: Partial<World> = {}): World {
   return {
     plats, view: { top: 0, bottom: 1000 }, now: 0, reducedMotion: false, paused: false, rand: () => 0.9,
-    scruff: (yaw) => [10 * Math.cos(yaw), 30], cursor: null, hover: false, bounds: { left: 0, right: 1000 }, ...over,
+    scruff: (yaw) => [10 * Math.cos(yaw), 30], cursor: null, hover: false, bounds: { left: 0, right: 1000 }, house: null, ...over,
   };
 }
 
@@ -390,4 +390,80 @@ test("a ball lost off the page goes back to the cursor instead of falling foreve
   run(s, w, 600);
   expect(s.fetch?.phase).toBe("wait");
   expect(s.fetch?.ball).toBeNull();
+});
+
+function withHouse(plats: Platform[], house: { x1: number; x2: number; y: number }, over: Partial<World> = {}) {
+  const w = world(plats, { house, ...over });
+  const s = initState(w);
+  return { s, w };
+}
+
+test("go home: from a nearby line he walks down into his house", () => {
+  const f = { ...floor, y: 900 };
+  const { s, w } = withHouse([text(100, 600, 400), f], { x1: 880, x2: 912, y: 900 });
+  Object.assign(s, { plat: 0, x: 300, y: 400, mode: "walk" });
+  runCommand(s, "go home", w);
+  expect(s.mode).toBe("goingHome");
+  run(s, w, 480); // 8s
+  expect(s.mode).toBe("home");
+});
+
+test("go home: from far away he dashes so it still takes under 8s", () => {
+  const f = { ...floor, y: 2900 };
+  const { s, w } = withHouse([text(100, 300, 400), text(100, 700, 1600), f], { x1: 960, x2: 992, y: 2900 }, { view: { top: 0, bottom: 3000 } });
+  Object.assign(s, { plat: 0, x: 150, y: 400, mode: "walk" });
+  runCommand(s, "go home", w);
+  run(s, w, 480);
+  expect(s.mode).toBe("home");
+});
+
+test("at home nothing happens: no naps, no idles, no wandering", () => {
+  const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 912, y: 900 });
+  Object.assign(s, { plat: 1, x: 896, y: 900, mode: "home" });
+  run(s, w, 3000);
+  expect(s.mode).toBe("home");
+  expect(s.x).toBe(896);
+});
+
+test("called out, he comes out of the door onto the floor and walks off", () => {
+  const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 912, y: 900 });
+  Object.assign(s, { plat: 1, x: 896, y: 900, mode: "home" });
+  callOut(s, w);
+  expect(s.mode).toBe("comingOut");
+  run(s, w, 120);
+  expect(s.mode).not.toBe("comingOut");
+  expect(s.y).toBe(900);
+  expect(s.x).toBeLessThan(880);
+});
+
+test("with reduced motion going home and coming out are instant", () => {
+  const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 912, y: 900 }, { reducedMotion: true });
+  Object.assign(s, { plat: 0, x: 300, y: 400, mode: "idle" });
+  runCommand(s, "go home", w);
+  expect(s.mode).toBe("home");
+  callOut(s, w);
+  expect(s.mode).toBe("idle");
+  expect(s.y).toBe(900);
+});
+
+test("after navigating to a shorter page (floor above him) he drops into view instead of falling forever", () => {
+  const w = world([text(100, 600, 150), { ...floor, y: 345 }], { view: { top: 0, bottom: 1070 } });
+  const s = initState(w);
+  Object.assign(s, { x: 900, y: 716, mode: "walk", plat: 9 });
+  onPageSwap(s, w);
+  run(s, w, 200);
+  expect(s.mode).not.toBe("fall");
+  expect(s.y).toBeLessThanOrEqual(345);
+});
+
+test("a fall with nothing at all below him drops him back into view straight away", () => {
+  const w = world([text(100, 600, 150)], { view: { top: 0, bottom: 1000 } });
+  const s = initState(w);
+  Object.assign(s, { x: 900, y: 500, mode: "walk", plat: 0 });
+  startFall(s);
+  run(s, w, 3);
+  expect(s.x).toBeLessThanOrEqual(600);
+  run(s, w, 100);
+  expect(s.plat).toBe(0);
+  expect(s.y).toBe(150);
 });

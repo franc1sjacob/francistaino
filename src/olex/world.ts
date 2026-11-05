@@ -42,7 +42,19 @@ export function measure(doc: Document): Platform[] {
     const r = footer.getBoundingClientRect();
     walkable.push({ x1: r.left + sx, x2: r.right + sx, y: Math.round(r.top + sy), kind: "floor" });
   }
+  const house = measureHouse(doc);
+  // the roof peak is a tiny perch
+  if (house) walkable.push({ x1: (house.x1 + house.x2) / 2 - 6, x2: (house.x1 + house.x2) / 2 + 6, y: house.roof, kind: "house" });
   return walkable;
+}
+
+// the doghouse box in document coordinates: y is the ground it stands on
+export function measureHouse(doc: Document): { x1: number; x2: number; y: number; roof: number } | null {
+  const el = doc.getElementById("olex-house");
+  if (!el) return null;
+  const sx = doc.defaultView?.scrollX ?? 0, sy = doc.defaultView?.scrollY ?? 0;
+  const r = el.getBoundingClientRect();
+  return { x1: r.left + sx, x2: r.right + sx, y: Math.round(r.bottom + sy), roof: Math.round(r.top + sy) };
 }
 
 const spans = (p: Platform, x: number) => x >= p.x1 && x <= p.x2;
@@ -53,7 +65,7 @@ export function platformUnder(ps: Platform[], x: number, y: number): number {
   ps.forEach((p, i) => {
     if (p.y >= y && spans(p, x) && (best < 0 || p.y < ps[best].y)) best = i;
   });
-  if (best < 0) best = ps.findIndex((p) => p.kind === "floor");
+  if (best < 0) best = ps.findIndex((p) => p.kind === "floor" && p.y >= y);
   return best;
 }
 

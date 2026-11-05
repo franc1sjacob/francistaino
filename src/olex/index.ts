@@ -2,9 +2,10 @@
 
 import { build, render, paint, scruffOffset, BUFFER } from "./model";
 import { attachInput, type Gesture } from "./input";
-import { measure, type Platform } from "./world";
+import { measure, measureHouse, type Platform } from "./world";
+import { store } from "./store";
 import { fixedSteps } from "./physics";
-import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, throwBall, endFetch, type State, type World } from "./brain";
+import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, throwBall, endFetch, callOut, type State, type World } from "./brain";
 import { attachThrow, setBall } from "./ball";
 import { openMenu } from "./menu";
 
@@ -40,6 +41,8 @@ function view() {
 
 function remeasure(): void {
   world.plats = measure(document);
+  const h = measureHouse(document);
+  world.house = h && { x1: h.x1, x2: h.x2, y: h.y };
   // the ball bounces off the edges of the content column, where there is ground to land on
   const floor = world.plats.find((p) => p.kind === "floor");
   world.bounds = floor ? { left: floor.x1, right: floor.x2 } : { left: 0, right: document.documentElement.scrollWidth };
@@ -47,6 +50,7 @@ function remeasure(): void {
 }
 
 function isOffscreen(): boolean {
+  if (state.mode === "fall") return false; // dropping in from above the screen: keep full speed
   const v = view();
   return state.y < v.top || state.y - 60 > v.bottom;
 }
@@ -125,6 +129,59 @@ function drawBall(): void {
   setBall(layer, c ? { x: c.x + 10, y: c.y + 14 } : { x: state.x + 24, y: state.y - 40 });
 }
 
+// keeps the page, storage, and nav toggle in step with whether he is home
+function setHome(home: boolean): void {
+  canvas.style.visibility = home ? "hidden" : "";
+  if (home) {
+    tag.hidden = true;
+    setBall(layer, null);
+    bone?.remove();
+    bone = null;
+  }
+  store.setHome(home);
+  syncToggle();
+  if (home) houseSnores();
+}
+
+function syncToggle(): void {
+  const home = state.mode === "home";
+  const t = document.getElementById("olex-toggle");
+  t?.setAttribute("aria-pressed", String(!home));
+  t?.setAttribute("aria-label", home ? "call olex out" : "send olex home");
+}
+
+// a z drifts out of the door now and then while he sleeps inside
+let snoreTimer: ReturnType<typeof setTimeout> | undefined;
+function houseSnores(): void {
+  clearTimeout(snoreTimer);
+  if (state.mode !== "home" || !world.house) return;
+  if (!document.hidden) {
+    const z = document.createElement("div");
+    z.className = "olex-z";
+    z.textContent = "z";
+    z.style.transform = `translate(${Math.round((world.house.x1 + world.house.x2) / 2)}px, ${Math.round(world.house.y - 26)}px)`;
+    layer.appendChild(z);
+    setTimeout(() => z.remove(), 1800);
+  }
+  snoreTimer = setTimeout(houseSnores, 2600);
+}
+
+// read through a function: TypeScript can't see that runCommand changes the mode
+const isHome = () => state.mode === "home";
+
+function toggleHome(): void {
+  if (state.mode === "home") {
+    remeasure();
+    callOut(state, world);
+    setHome(false);
+    run();
+  } else {
+    runCommand(state, "go home", world);
+    if (isHome()) setHome(true); // reduced motion: instant
+    else syncToggle();
+  }
+}
+
 function heart(): void {
   const h = document.createElement("div");
   h.className = "olex-heart";
@@ -164,6 +221,12 @@ function frame(): void {
     hearts += state.events.filter((e) => e === "heart").length;
   }
   if (hearts) heart();
+  if (state.mode === "home") {
+    // he went inside: hide him and let the loop sleep until he is called out
+    setHome(true);
+    running = false;
+    return;
+  }
   // frames with no tick keep the previous answer, so legs don't freeze on high refresh displays
   if (steps > 0) legsMoving = state.walk !== walkBefore;
   snore(now);
@@ -177,7 +240,7 @@ function frame(): void {
 }
 
 function run(): void {
-  if (running || document.hidden) return;
+  if (running || document.hidden || state.mode === "home") return;
   running = true;
   lastFrame = 0; // don't replay the time spent hidden
   requestAnimationFrame(frame);
@@ -234,9 +297,21 @@ export function start(): void {
     cursor: null,
     hover: false,
     bounds: { left: 0, right: document.documentElement.scrollWidth },
+    house: null,
   };
   remeasure();
   state = initState(world);
+  const saved = store.getSession();
+  if (store.getHome() && world.house) {
+    runCommand(state, "go home", { ...world, reducedMotion: true }); // straight inside, no walk
+  } else if (saved) {
+    // a full reload: put him back where he was on screen and let him land
+    state.x = saved.x;
+    state.y = scrollY + saved.vy;
+    state.dir = saved.dir;
+    onPageSwap(state, world);
+  }
+  addEventListener("pagehide", () => store.setSession({ x: state.x, vy: state.y - scrollY, dir: state.dir }));
   // dev only: lets manual checks poke at his state from the console
   if (import.meta.env.DEV) Object.assign(window, { __olex: { state, world } });
 
@@ -251,11 +326,19 @@ export function start(): void {
   let swapped = false;
   document.addEventListener("astro:after-swap", () => (swapped = true));
   document.addEventListener("astro:page-load", () => {
+    syncToggle(); // the nav was re-rendered
     if (!swapped) return;
     swapped = false;
     remeasure();
     world.view = view();
-    onPageSwap(state, world);
+    if (state.mode === "home") runCommand(state, "go home", { ...world, reducedMotion: true }); // the house moved with the new page
+    else onPageSwap(state, world);
+  });
+  // delegated, because the nav and footer are replaced on every navigation
+  document.addEventListener("click", (e) => {
+    const t = e.target as Element | null;
+    if (t?.closest("#olex-toggle")) toggleHome();
+    else if (t?.closest("#olex-house") && state.mode === "home") toggleHome();
   });
   document.addEventListener("pointermove", hitTest, { passive: true });
   document.addEventListener("pointermove", trackCursor, { passive: true });
@@ -271,5 +354,7 @@ export function start(): void {
     onEnd: () => endFetch(state),
   });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
+  if (state.mode === "home") setHome(true);
+  else syncToggle();
   run();
 }

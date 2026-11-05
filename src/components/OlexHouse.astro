@@ -1,0 +1,44 @@
+---
+// olex's doghouse, as pixel art: R roof, r roof shadow, W/w wall planks, D door
+const ART = [
+  '.......RR.......',
+  '......RRRR......',
+  '.....RRRRRR.....',
+  '....RRRRRRRR....',
+  '...RRRRRRRRRR...',
+  '..RRRRRRRRRRRR..',
+  '.rrrrrrrrrrrrrr.',
+  '..WWWWWWWWWWWW..',
+  '..wwwwwDDwwwww..',
+  '..WWWWDDDDWWWW..',
+  '..wwwwDDDDwwww..',
+  '..WWWWDDDDWWWW..',
+  '..wwwwDDDDwwww..',
+  '..WWWWDDDDWWWW..',
+];
+const COLORS: Record<string, string> = { R: '#bd5d3a', r: '#7a3a22', W: '#a76d46', w: '#8a5332', D: '#1a0f0a' };
+const pixels = ART.flatMap((row, y) =>
+  [...row].flatMap((ch, x) => (COLORS[ch] ? [{ x, y, fill: COLORS[ch] }] : [])),
+);
+---
+<button id="olex-house" class="olex-house" type="button" aria-label="call olex out">
+  <svg viewBox="0 0 16 14" width="32" height="28" shape-rendering="crispEdges" aria-hidden="true">
+    {pixels.map((p) => <rect x={p.x} y={p.y} width="1" height="1" fill={p.fill} />)}
+  </svg>
+</button>
+
+<style>
+  .olex-house {
+    position: absolute;
+    right: 24px;
+    bottom: 100%;
+    z-index: 6; /* in front of olex, so walking in looks like going inside */
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    line-height: 0;
+    cursor: pointer;
+  }
+  .olex-house svg { display: block; }
+</style>
