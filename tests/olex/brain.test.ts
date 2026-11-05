@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, throwBall, endFetch, callOut, startFall, type World, type State } from "../../src/olex/brain";
+import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, throwBall, endFetch, callOut, startFall, houseInFront, type World, type State } from "../../src/olex/brain";
 import type { Platform } from "../../src/olex/world";
 
 const text = (x1: number, x2: number, y: number): Platform => ({ x1, x2, y, kind: "text" });
@@ -543,4 +543,22 @@ test("clicking the house while he is out does nothing", () => {
   callOut(s, w);
   expect(s.mode).toBe("walk");
   expect(s.x).toBe(300);
+});
+
+test("the house stays behind him when he just walks past it", () => {
+  const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 944, y: 900 });
+  Object.assign(s, { plat: 1, x: 912, y: 900, mode: "walk" });
+  expect(houseInFront(s, w)).toBe(false);
+  Object.assign(s, { mode: "goingHome", x: 600 });
+  expect(houseInFront(s, w)).toBe(false); // still on his way
+});
+
+test("the house comes in front for his last steps through the door, and when he comes out", () => {
+  const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 944, y: 900 });
+  Object.assign(s, { plat: 1, x: 890, y: 900, mode: "goingHome" });
+  expect(houseInFront(s, w)).toBe(true);
+  Object.assign(s, { mode: "comingOut", x: 900 });
+  expect(houseInFront(s, w)).toBe(true);
+  Object.assign(s, { mode: "home" });
+  expect(houseInFront(s, w)).toBe(true);
 });

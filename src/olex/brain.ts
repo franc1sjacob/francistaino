@@ -776,3 +776,14 @@ export function callOut(s: State, w: World): void {
   }
   s.mode = "comingOut";
 }
+
+const DOOR_REACH = 40; // px either side of the door where he counts as stepping through it
+
+// the house is drawn in front of him only while he goes in or comes out, so walking past it he stays in front
+export function houseInFront(s: State, w: World): boolean {
+  if (!w.house) return false;
+  if (s.mode === "home" || s.mode === "comingOut") return true;
+  if (s.mode !== "goingHome") return false;
+  const d = door(w.house);
+  return Math.abs(s.x - d.x) <= DOOR_REACH && Math.abs(s.y - d.y) <= SNAP;
+}

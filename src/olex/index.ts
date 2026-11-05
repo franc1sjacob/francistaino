@@ -8,7 +8,7 @@ import { store } from "./store";
 import { createPetCounter } from "./pets";
 import { COUNTER_URL } from "./config";
 import { fixedSteps } from "./physics";
-import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, throwBall, endFetch, callOut, type State, type World } from "./brain";
+import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, throwBall, endFetch, callOut, houseInFront, type State, type World } from "./brain";
 import { attachThrow, setBall } from "./ball";
 import { openMenu } from "./menu";
 
@@ -90,6 +90,8 @@ function draw(): void {
     : { x: Math.round(state.x - (W / 2) * SCALE), y: Math.round(state.y - (H - BUFFER.GROUND) * SCALE) };
   canvas.style.transform = `translate(${origin.x}px, ${origin.y}px)`;
   canvas.classList.toggle("carried", m === "carried");
+  // the footer is replaced on navigation, so look the house up each frame (cheap)
+  document.getElementById("olex-house")?.classList.toggle("in-front", houseInFront(state, world));
   drawBone();
   drawBall();
 
@@ -131,13 +133,17 @@ function drawBone(): void {
   bone.style.transform = `translate(${Math.round(state.treat.x - 7)}px, ${Math.round(world.plats[state.plat]?.y - 10)}px)`;
 }
 
+let heldBall: { x: number; y: number } | null = null; // where a finger is holding the ball
+
 function drawBall(): void {
   const f = state.fetch;
   if (!f || f.phase === "carry") return setBall(layer, null);
   if (f.phase === "chase" && f.ball) return setBall(layer, f.ball);
-  // waiting: the ball sits on your cursor (or above him on touch screens)
+  if (heldBall) return setBall(layer, { x: heldBall.x, y: heldBall.y + 5 }, true);
+  // waiting: with a mouse the ball rides on the cursor; on touch it lies at his feet to be picked up
   const c = world.cursor;
-  setBall(layer, c ? { x: c.x + 10, y: c.y + 14 } : { x: state.x + 24, y: state.y - 40 });
+  if (c) setBall(layer, { x: c.x + 10, y: c.y + 14 });
+  else setBall(layer, { x: state.x + 26, y: state.y }, true);
 }
 
 // keeps the page and storage in step with whether he is home
@@ -370,6 +376,7 @@ export function start(): void {
   attachThrow({
     armed: () => state.fetch?.phase === "wait",
     olex: canvas,
+    onHold: (at) => (heldBall = at),
     onThrow: (b) => throwBall(state, b, world),
     onEnd: () => endFetch(state),
   });

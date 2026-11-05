@@ -62,6 +62,24 @@
   @keyframes olex-drift {
     to { translate: 10px -30px; opacity: 0; }
   }
+  :global(.olex-ball) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    image-rendering: pixelated;
+    pointer-events: none;
+  }
+  /* on touch screens the ball is picked up directly: a bigger invisible touch target, and no page scroll from it */
+  :global(.olex-ball.grabbable) {
+    box-sizing: content-box; /* the site defaults to border-box, which would squash the ball into its padding */
+    padding: 15px;
+    margin: -15px;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: grab;
+  }
   :global(.olex-bone) {
     position: absolute;
     left: 0;
