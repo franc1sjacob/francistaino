@@ -69,3 +69,14 @@ export function throwVelocity(samples: { x: number; y: number; t: number }[]): {
     vy: clamp(((last.y - first.y) / dt) * FRAME_MS),
   };
 }
+
+const TICK_MS = 1000 / 60;
+const MAX_CATCH_UP = 4;
+
+// how many 60Hz brain ticks to run for a frame of dt ms, so speed never depends on the display's refresh rate
+export function fixedSteps(acc: number, dt: number): { steps: number; acc: number } {
+  acc += dt;
+  const steps = Math.floor(acc / TICK_MS);
+  if (steps > MAX_CATCH_UP) return { steps: MAX_CATCH_UP, acc: 0 }; // drop the backlog after a stall
+  return { steps, acc: acc - steps * TICK_MS };
+}

@@ -3,7 +3,9 @@
 import { build, render, paint, scruffOffset, BUFFER } from "./model";
 import { attachInput, type Gesture } from "./input";
 import { measure, type Platform } from "./world";
-import { initState, tick, onPageSwap, handle, type State, type World } from "./brain";
+import { fixedSteps } from "./physics";
+import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, type State, type World } from "./brain";
+import { openMenu } from "./menu";
 
 const SCALE = 2;
 const REMEASURE_MS = 3000;
@@ -24,6 +26,10 @@ let hovering = false;
 let input: { active: () => boolean };
 let tag: HTMLElement;
 let layer: HTMLElement;
+let bone: HTMLCanvasElement | null = null;
+let legsMoving = false;
+let tickAcc = 0;
+let lastFrame = 0;
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -47,7 +53,8 @@ function draw(): void {
   const airborne = m === "carried" || m === "drop";
   lastOut = render(W, H, {
     yaw: state.yaw,
-    walk: m === "walk" || m === "hop" || m === "carried" ? state.walk % 1 : null,
+    // legs move whenever the brain advanced the walk cycle this frame
+    walk: legsMoving ? state.walk % 1 : null,
     tongue: m === "pet" || m === "carried" || m === "spin" || state.idle === "yawn",
     tailWag: state.wag,
     scratch: state.idle === "scratch" && state.poseT > 0.9 ? state.phase : null,
@@ -63,6 +70,7 @@ function draw(): void {
     : { x: Math.round(state.x - (W / 2) * SCALE), y: Math.round(state.y - (H - BUFFER.GROUND) * SCALE) };
   canvas.style.transform = `translate(${origin.x}px, ${origin.y}px)`;
   canvas.classList.toggle("carried", m === "carried");
+  drawBone();
 
   tag.hidden = !(hovering || m === "carried");
   const top = airborne ? state.pivot.y - 34 : state.y - 30 * SCALE;
@@ -81,6 +89,27 @@ function snore(now: number): void {
   setTimeout(() => z.remove(), 1800);
 }
 
+// a tiny pixel bone for the treat command
+const BONE = ["#.....#", "##...##", ".#####.", "##...##", "#.....#"];
+function drawBone(): void {
+  if (!state.treat) {
+    bone?.remove();
+    bone = null;
+    return;
+  }
+  if (!bone) {
+    bone = document.createElement("canvas");
+    bone.className = "olex-bone";
+    bone.width = BONE[0].length;
+    bone.height = BONE.length;
+    const c = bone.getContext("2d")!;
+    c.fillStyle = "#efe6d6";
+    BONE.forEach((row, y) => [...row].forEach((ch, x) => ch === "#" && c.fillRect(x, y, 1, 1)));
+    layer.appendChild(bone);
+  }
+  bone.style.transform = `translate(${Math.round(state.treat.x - 7)}px, ${Math.round(world.plats[state.plat]?.y - 10)}px)`;
+}
+
 function heart(): void {
   const h = document.createElement("div");
   h.className = "olex-heart";
@@ -91,6 +120,10 @@ function heart(): void {
 }
 
 function onGesture(g: Gesture): void {
+  if (g.kind === "menu") {
+    openMenu(g.x - scrollX, g.y - scrollY, (c) => runCommand(state, c, world));
+    return;
+  }
   handle(state, g, world);
   if (g.kind === "pet" && (state.mode === "pet" || state.mode === "spin")) heart();
 }
@@ -105,7 +138,19 @@ function frame(): void {
   const sel = document.getSelection();
   world.paused = !!sel && !sel.isCollapsed;
   world.hover = hovering;
-  tick(state, world);
+  // the brain runs at a fixed 60 ticks/s whatever the display's refresh rate
+  const { steps, acc } = fixedSteps(tickAcc, lastFrame ? now - lastFrame : 0);
+  tickAcc = acc;
+  lastFrame = now;
+  let hearts = 0;
+  const walkBefore = state.walk;
+  for (let i = 0; i < steps; i++) {
+    tick(state, world);
+    hearts += state.events.filter((e) => e === "heart").length;
+  }
+  if (hearts) heart();
+  // frames with no tick keep the previous answer, so legs don't freeze on high refresh displays
+  if (steps > 0) legsMoving = state.walk !== walkBefore;
   snore(now);
   if (isOffscreen()) {
     // keep thinking (so he can come back) but skip drawing
@@ -119,6 +164,7 @@ function frame(): void {
 function run(): void {
   if (running || document.hidden) return;
   running = true;
+  lastFrame = 0; // don't replay the time spent hidden
   requestAnimationFrame(frame);
 }
 
@@ -199,6 +245,9 @@ export function start(): void {
   document.addEventListener("pointermove", trackCursor, { passive: true });
   document.documentElement.addEventListener("pointerleave", () => (world.cursor = null));
   input = attachInput(canvas, onGesture);
+  document.addEventListener("pointerdown", (e) => {
+    if (e.target !== canvas) clickAnywhere(state, world);
+  });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   run();
 }

@@ -2,6 +2,7 @@
 
 import type { Pose } from "./model";
 import type { Gesture } from "./input";
+import type { Command } from "./menu";
 import { hopPos, stepFall, stepPendulum, type Hop } from "./physics";
 import { landingCrossed, nearestVisible, platformUnder, reachable, type Platform, type View } from "./world";
 
@@ -10,6 +11,8 @@ export type Mode =
   | "command" | "fetch" | "home" | "goingHome";
 
 export type Idle = "sit" | "scratch" | "yawn" | "nap" | "notice";
+export type Cmd = "sit" | "roll" | "treat" | "follow" | "zoomies" | "flop";
+export type Event = "heart";
 
 export type State = {
   mode: Mode;
@@ -39,6 +42,9 @@ export type State = {
   poseGoal: Pose;       // pose he is easing toward
   phase: number;        // scratch phase
   wag: number | null;   // tail wag phase, null when still
+  cmd: Cmd | null;      // active menu command while mode is "command"
+  treat: { x: number } | null;
+  events: Event[];      // one-shot effects for the page to show, cleared each tick
 };
 
 export type World = {
@@ -90,7 +96,7 @@ export function initState(w: World): State {
     lastInteraction: w.now, offscreenSince: null,
     swingA: 0, swingV: 0, pivot: { x: 0, y: 0 }, pointer: { x: 0, y: 0, vx: 0 }, pets: [],
     idle: null, lastIdle: null, nextIdleAt: w.now + IDLE_EVERY_MS, noticeCooldown: 0,
-    poseGoal: "stand", phase: 0, wag: null,
+    poseGoal: "stand", phase: 0, wag: null, cmd: null, treat: null, events: [],
   };
 }
 
@@ -121,10 +127,10 @@ function easeYaw(s: State): void {
   s.yaw += Math.sign(d) * Math.min(Math.abs(d), YAW_STEP);
 }
 
-function startHop(s: State, w: World, to: number): void {
+function startHop(s: State, w: World, to: number, o: { dur?: number; h?: number; then?: Mode } = {}): void {
   const t = w.plats[to];
   const tx = Math.min(Math.max(s.x, t.x1 + EDGE), t.x2 - EDGE);
-  s.hop = { fx: s.x, fy: s.y, tx, ty: t.y, t: 0, dur: HOP_TICKS, h: HOP_HEIGHT, to };
+  s.hop = { fx: s.x, fy: s.y, tx, ty: t.y, t: 0, dur: o.dur ?? HOP_TICKS, h: o.h ?? HOP_HEIGHT, to, then: o.then };
   s.mode = "hop";
 }
 
@@ -193,6 +199,7 @@ function trackOffscreen(s: State, w: World): void {
 }
 
 export function tick(s: State, w: World): void {
+  s.events = [];
   easeYaw(s);
   trackOffscreen(s, w);
 
@@ -211,7 +218,7 @@ export function tick(s: State, w: World): void {
     else if (s.mode === "walk" && w.now >= s.nextIdleAt) startIdle(s, w, pickIdle(s, w.rand));
   }
 
-  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin"].includes(s.mode);
+  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command"].includes(s.mode);
   if (grounded && !supported(s, w)) startFall(s);
 
   switch (s.mode) {
@@ -220,6 +227,9 @@ export function tick(s: State, w: World): void {
       break;
     case "idle":
       stepIdle(s, w);
+      break;
+    case "command":
+      stepCommand(s, w);
       break;
     case "turn":
       if (Math.abs(s.targetYaw - s.yaw) < 0.01) {
@@ -319,11 +329,12 @@ function stepDrop(s: State, w: World): void {
   }
 }
 
-const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake"].includes(m);
+const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake", "command"].includes(m);
 
 export function handle(s: State, g: Gesture, w: World): void {
   s.lastInteraction = w.now;
-  // any attention ends whatever he was idly doing, including a nap
+  // any attention ends whatever he was idly doing (including a nap) or was told to do
+  if (g.kind !== "dragMove" && s.cmd) endCommand(s);
   if (s.idle) {
     s.idle = null;
     s.poseGoal = "stand";
@@ -452,4 +463,151 @@ function stepIdle(s: State, w: World): void {
     s.poseGoal = "sit";
   }
   if (--s.timer <= 0) endIdle(s, w);
+}
+
+const ZOOMIES_TICKS = 375;   // about 6s
+const ZOOMIES_SPEED = 4.5;
+const FLOP_TICKS = 150;
+const ROLL_TICKS = 140;
+const EAT_TICKS = 90;
+const FOLLOW_SPEED = 1.4;
+
+function endCommand(s: State): void {
+  s.cmd = null;
+  s.treat = null;
+  s.poseGoal = "stand";
+  if (s.mode === "command") turnTo(s, facingYaw(s.dir));
+}
+
+function startCommand(s: State, cmd: Cmd, timer = Infinity): void {
+  s.idle = null;
+  s.hop = null;
+  s.mode = "command";
+  s.cmd = cmd;
+  s.timer = timer;
+}
+
+export function runCommand(s: State, c: Command, w: World): void {
+  s.lastInteraction = w.now;
+  if (s.cmd) endCommand(s);
+  s.idle = null;
+  switch (c) {
+    case "sit":
+      startCommand(s, "sit");
+      s.poseGoal = "sit";
+      s.targetYaw = Math.PI / 2;
+      break;
+    case "roll over":
+      startCommand(s, "roll", ROLL_TICKS);
+      s.poseGoal = "lie";
+      break;
+    case "spin":
+      s.mode = "spin";
+      s.timer = SPIN_TICKS;
+      break;
+    case "treat": {
+      const p = w.plats[s.plat];
+      const x = Math.min(Math.max(s.x + s.dir * 40, p.x1 + EDGE), p.x2 - EDGE);
+      startCommand(s, "treat");
+      s.treat = { x };
+      break;
+    }
+    case "nap":
+      startIdle(s, w, "nap");
+      break;
+    case "follow me":
+      startCommand(s, "follow");
+      break;
+    case "zoomies":
+      startCommand(s, "zoomies", ZOOMIES_TICKS);
+      break;
+    case "fetch":
+    case "go home":
+      break; // wired up by the fetch and home tasks
+  }
+}
+
+// a click anywhere on the page ends "follow me"
+export function clickAnywhere(s: State, _w: World): void {
+  if (s.cmd === "follow") endCommand(s);
+}
+
+// walk toward x on the current platform; true once there (or blocked by the edge)
+function walkToward(s: State, w: World, x: number, speed: number, near: number): boolean {
+  const p = w.plats[s.plat];
+  const dx = x - s.x;
+  if (Math.abs(dx) <= near) return true;
+  s.dir = dx > 0 ? 1 : -1;
+  s.targetYaw = facingYaw(s.dir);
+  const next = s.x + s.dir * Math.min(speed, Math.abs(dx));
+  if (next < p.x1 + EDGE || next > p.x2 - EDGE) return true;
+  s.x = next;
+  s.walk += WALK_RATE * (speed / SPEED);
+  return false;
+}
+
+function stepCommand(s: State, w: World): void {
+  switch (s.cmd) {
+    case "sit":
+      return; // stays until petted or told otherwise
+    case "roll":
+      s.wag = (s.wag ?? 0) + 0.5;
+      if (--s.timer <= 0) endCommand(s);
+      return;
+    case "treat": {
+      if (!s.treat) return endCommand(s);
+      if (!walkToward(s, w, s.treat.x, SPEED, 6)) return;
+      if (s.timer === Infinity) {
+        s.timer = EAT_TICKS;
+        s.targetYaw = Math.PI / 2;
+      }
+      if (--s.timer <= 0) {
+        s.events.push("heart");
+        endCommand(s);
+      }
+      return;
+    }
+    case "follow": {
+      const c = w.cursor;
+      if (!c) return;
+      const arrived = walkToward(s, w, c.x, FOLLOW_SPEED, 20);
+      if (arrived && Math.abs(c.x - s.x) > 20) {
+        // at an edge: hop to the platform that gets him closest to the cursor
+        const best = reachable(w.plats, s.plat, MAX_CLIMB).sort((a, b) => dist(w.plats[a], c) - dist(w.plats[b], c))[0];
+        if (best !== undefined && dist(w.plats[best], c) < dist(w.plats[s.plat], c)) startHop(s, w, best, { then: "command" });
+      }
+      return;
+    }
+    case "zoomies": {
+      if (--s.timer <= 0) {
+        s.cmd = "flop";
+        s.timer = FLOP_TICKS;
+        s.poseGoal = "lie";
+        return;
+      }
+      const p = w.plats[s.plat];
+      s.x += s.dir * ZOOMIES_SPEED;
+      s.walk += WALK_RATE * 3;
+      const atEdge = s.dir > 0 ? s.x > p.x2 - EDGE : s.x < p.x1 + EDGE;
+      if (!atEdge) return;
+      s.x = Math.min(Math.max(s.x, p.x1 + EDGE), p.x2 - EDGE);
+      const targets = reachable(w.plats, s.plat, MAX_CLIMB);
+      if (targets.length && w.rand() < 0.6) {
+        startHop(s, w, targets[Math.floor(w.rand() * targets.length)], { dur: 18, h: 34, then: "command" });
+      } else {
+        // whip around instantly
+        s.dir = s.dir > 0 ? -1 : 1;
+        s.yaw = s.targetYaw = facingYaw(s.dir);
+      }
+      return;
+    }
+    case "flop":
+      if (--s.timer <= 0) endCommand(s);
+      return;
+  }
+}
+
+function dist(p: Platform, c: { x: number; y: number }): number {
+  const x = Math.min(Math.max(c.x, p.x1), p.x2);
+  return Math.hypot(c.x - x, c.y - p.y);
 }

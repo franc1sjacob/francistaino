@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { initState, tick, onPageSwap, handle, pickIdle, type World, type State } from "../../src/olex/brain";
+import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, type World, type State } from "../../src/olex/brain";
 import type { Platform } from "../../src/olex/world";
 
 const text = (x1: number, x2: number, y: number): Platform => ({ x1, x2, y, kind: "text" });
@@ -239,4 +239,87 @@ test("hovering makes his tail wag", () => {
   w.hover = true;
   run(s, w, 5);
   expect(s.wag).not.toBeNull();
+});
+
+function onLine(over: Partial<World> = {}) {
+  const w = world([text(100, 700, 400), floor], over);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 300, y: 400, mode: "walk", dir: 1 });
+  return { s, w };
+}
+
+test("sit: he sits and stays until petted", () => {
+  const { s, w } = onLine();
+  runCommand(s, "sit", w);
+  run(s, w, 600);
+  expect(s.cmd).toBe("sit");
+  expect(s.pose).toBe("sit");
+  expect(s.x).toBe(300);
+  handle(s, { kind: "pet" }, w);
+  expect(s.cmd).toBeNull();
+});
+
+test("roll over: he rolls onto his back, then gets back up", () => {
+  const { s, w } = onLine();
+  runCommand(s, "roll over", w);
+  let lay = false;
+  run(s, w, 60, (s) => (lay ||= s.pose === "lie" && s.poseT === 1));
+  expect(lay).toBe(true);
+  run(s, w, 300);
+  expect(s.cmd).toBeNull();
+  expect(s.pose).toBe("stand");
+});
+
+test("spin: he chases his tail", () => {
+  const { s, w } = onLine();
+  runCommand(s, "spin", w);
+  expect(s.mode).toBe("spin");
+});
+
+test("treat: a bone appears, he walks to it, eats it, and is happy", () => {
+  const { s, w } = onLine();
+  runCommand(s, "treat", w);
+  expect(s.treat).not.toBeNull();
+  const bone = s.treat!.x;
+  let hearts = 0, eatenAt: number | null = null;
+  run(s, w, 400, (s) => {
+    hearts += s.events.filter((e) => e === "heart").length;
+    if (eatenAt === null && s.treat === null) eatenAt = s.x;
+  });
+  expect(eatenAt).not.toBeNull();
+  expect(Math.abs(eatenAt! - bone)).toBeLessThan(12);
+  expect(hearts).toBeGreaterThan(0);
+});
+
+test("nap: he curls up right away", () => {
+  const { s, w } = onLine();
+  runCommand(s, "nap", w);
+  expect(s.idle).toBe("nap");
+});
+
+test("follow me: he trails the cursor until you click somewhere", () => {
+  const { s, w } = onLine({ cursor: { x: 600, y: 380, stillSince: 0 } });
+  runCommand(s, "follow me", w);
+  run(s, w, 300);
+  expect(Math.abs(s.x - 600)).toBeLessThan(40);
+  w.cursor = { x: 150, y: 380, stillSince: 0 };
+  run(s, w, 400);
+  expect(Math.abs(s.x - 150)).toBeLessThan(40);
+  clickAnywhere(s, w);
+  expect(s.cmd).toBeNull();
+});
+
+test("zoomies: he sprints for about 6s, then flops down, then recovers", () => {
+  const { s, w } = onLine();
+  runCommand(s, "zoomies", w);
+  const start = s.x;
+  let maxDist = 0;
+  run(s, w, 340, (s) => (maxDist = Math.max(maxDist, Math.abs(s.x - start)))); // ~5.4s
+  expect(s.cmd).toBe("zoomies");
+  expect(maxDist).toBeGreaterThan(200);
+  run(s, w, 60); // past 6s
+  expect(s.cmd).toBe("flop");
+  expect(s.poseGoal).toBe("lie");
+  run(s, w, 300);
+  expect(s.cmd).toBeNull();
 });

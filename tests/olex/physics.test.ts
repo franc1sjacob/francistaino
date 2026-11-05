@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { hopPos, stepPendulum, stepFall, stepBall, throwVelocity, type Hop, type Ball } from "../../src/olex/physics";
+import { hopPos, stepPendulum, stepFall, stepBall, throwVelocity, fixedSteps, type Hop, type Ball } from "../../src/olex/physics";
 import type { Platform } from "../../src/olex/world";
 
 test("hop starts at the origin, ends at the target, and arcs above both", () => {
@@ -72,4 +72,19 @@ test("throw velocity uses only the last 80ms and is clamped", () => {
   expect(v.vy).toBeCloseTo(-16 / 3, 5);
   const fast = throwVelocity([{ x: 0, y: 0, t: 0 }, { x: 900, y: 0, t: 16 }]);
   expect(fast.vx).toBe(30);
+});
+
+test("fixed steps run 60 ticks per second regardless of display refresh rate", () => {
+  let acc = 0, ticks120 = 0, ticks60 = 0;
+  for (let i = 0; i < 120; i++) { const r = fixedSteps(acc, 1000 / 120); acc = r.acc; ticks120 += r.steps; }
+  acc = 0;
+  for (let i = 0; i < 60; i++) { const r = fixedSteps(acc, 1000 / 60); acc = r.acc; ticks60 += r.steps; }
+  expect(Math.abs(ticks120 - 60)).toBeLessThanOrEqual(1);
+  expect(Math.abs(ticks60 - 60)).toBeLessThanOrEqual(1);
+});
+
+test("a long stall (background tab) runs at most a few catch-up ticks", () => {
+  const r = fixedSteps(0, 5000);
+  expect(r.steps).toBe(4);
+  expect(r.acc).toBe(0);
 });
