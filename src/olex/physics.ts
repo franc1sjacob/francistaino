@@ -38,6 +38,7 @@ export function stepBall(b: Ball, ps: Platform[], bounds: { left: number; right:
   b.y += b.vy;
   if (b.x < bounds.left) { b.x = bounds.left; b.vx = -b.vx * 0.7; }
   if (b.x > bounds.right) { b.x = bounds.right; b.vx = -b.vx * 0.7; }
+  if (b.y < 0) { b.y = 0; b.vy = -b.vy * 0.7; } // the top of the page
   if (b.vy <= 0) return;
   const hit = landingCrossed(ps, b.x, prevY, b.y);
   if (hit < 0) return;
@@ -53,7 +54,7 @@ export function stepBall(b: Ball, ps: Platform[], bounds: { left: number; right:
 
 const THROW_WINDOW_MS = 80;
 const FRAME_MS = 16;
-const MAX_THROW = 30;
+const MAX_THROW = 18;
 
 // pointer flick velocity in px per frame, from samples in the last 80ms
 export function throwVelocity(samples: { x: number; y: number; t: number }[]): { vx: number; vy: number } {

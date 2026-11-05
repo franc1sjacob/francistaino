@@ -80,3 +80,16 @@ test("wagging only moves the tail", () => {
   expect(changed).toBeGreaterThan(0);
   expect(outsideTail).toBe(0);
 });
+
+test("carrying the ball adds it at his mouth", () => {
+  const without = render(W, H, { yaw: 0 });
+  const withBall = render(W, H, { yaw: 0, ball: true });
+  let added = 0, behindHead = 0;
+  for (let i = 0; i < W * H; i++)
+    if (!without[i] && withBall[i]) {
+      added++;
+      if (i % W < W / 2) behindHead++;
+    }
+  expect(added).toBeGreaterThan(2);
+  expect(behindHead).toBe(0);
+});

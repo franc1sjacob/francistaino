@@ -71,7 +71,7 @@ test("throw velocity uses only the last 80ms and is clamped", () => {
   expect(v.vx).toBeCloseTo(10, 5);
   expect(v.vy).toBeCloseTo(-16 / 3, 5);
   const fast = throwVelocity([{ x: 0, y: 0, t: 0 }, { x: 900, y: 0, t: 16 }]);
-  expect(fast.vx).toBe(30);
+  expect(fast.vx).toBe(18);
 });
 
 test("fixed steps run 60 ticks per second regardless of display refresh rate", () => {
@@ -87,4 +87,11 @@ test("a long stall (background tab) runs at most a few catch-up ticks", () => {
   const r = fixedSteps(0, 5000);
   expect(r.steps).toBe(4);
   expect(r.acc).toBe(0);
+});
+
+test("the top of the page is a ceiling for the ball", () => {
+  const b: Ball = { x: 300, y: 10, vx: 0, vy: -18, resting: false };
+  stepBall(b, [line], { left: 0, right: 1000 });
+  expect(b.y).toBeGreaterThanOrEqual(0);
+  expect(b.vy).toBeGreaterThan(0);
 });

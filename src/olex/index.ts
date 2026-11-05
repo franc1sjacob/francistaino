@@ -4,7 +4,8 @@ import { build, render, paint, scruffOffset, BUFFER } from "./model";
 import { attachInput, type Gesture } from "./input";
 import { measure, type Platform } from "./world";
 import { fixedSteps } from "./physics";
-import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, type State, type World } from "./brain";
+import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, throwBall, endFetch, type State, type World } from "./brain";
+import { attachThrow, setBall } from "./ball";
 import { openMenu } from "./menu";
 
 const SCALE = 2;
@@ -39,6 +40,9 @@ function view() {
 
 function remeasure(): void {
   world.plats = measure(document);
+  // the ball bounces off the edges of the content column, where there is ground to land on
+  const floor = world.plats.find((p) => p.kind === "floor");
+  world.bounds = floor ? { left: floor.x1, right: floor.x2 } : { left: 0, right: document.documentElement.scrollWidth };
   lastMeasure = performance.now();
 }
 
@@ -57,6 +61,7 @@ function draw(): void {
     walk: legsMoving ? state.walk % 1 : null,
     tongue: m === "pet" || m === "carried" || m === "spin" || state.idle === "yawn",
     tailWag: state.wag,
+    ball: state.fetch?.phase === "carry",
     scratch: state.idle === "scratch" && state.poseT > 0.9 ? state.phase : null,
     pose: state.pose,
     poseT: state.poseT,
@@ -71,6 +76,7 @@ function draw(): void {
   canvas.style.transform = `translate(${origin.x}px, ${origin.y}px)`;
   canvas.classList.toggle("carried", m === "carried");
   drawBone();
+  drawBall();
 
   tag.hidden = !(hovering || m === "carried");
   const top = airborne ? state.pivot.y - 34 : state.y - 30 * SCALE;
@@ -108,6 +114,15 @@ function drawBone(): void {
     layer.appendChild(bone);
   }
   bone.style.transform = `translate(${Math.round(state.treat.x - 7)}px, ${Math.round(world.plats[state.plat]?.y - 10)}px)`;
+}
+
+function drawBall(): void {
+  const f = state.fetch;
+  if (!f || f.phase === "carry") return setBall(layer, null);
+  if (f.phase === "chase" && f.ball) return setBall(layer, f.ball);
+  // waiting: the ball sits on your cursor (or above him on touch screens)
+  const c = world.cursor;
+  setBall(layer, c ? { x: c.x + 10, y: c.y + 14 } : { x: state.x + 24, y: state.y - 40 });
 }
 
 function heart(): void {
@@ -218,6 +233,7 @@ export function start(): void {
     },
     cursor: null,
     hover: false,
+    bounds: { left: 0, right: document.documentElement.scrollWidth },
   };
   remeasure();
   state = initState(world);
@@ -247,6 +263,12 @@ export function start(): void {
   input = attachInput(canvas, onGesture);
   document.addEventListener("pointerdown", (e) => {
     if (e.target !== canvas) clickAnywhere(state, world);
+  });
+  attachThrow({
+    armed: () => state.fetch?.phase === "wait",
+    olex: canvas,
+    onThrow: (b) => throwBall(state, b, world),
+    onEnd: () => endFetch(state),
   });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   run();

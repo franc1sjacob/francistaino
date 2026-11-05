@@ -3,7 +3,7 @@
 import type { Pose } from "./model";
 import type { Gesture } from "./input";
 import type { Command } from "./menu";
-import { hopPos, stepFall, stepPendulum, type Hop } from "./physics";
+import { hopPos, stepBall, stepFall, stepPendulum, type Ball, type Hop } from "./physics";
 import { landingCrossed, nearestVisible, platformUnder, reachable, type Platform, type View } from "./world";
 
 export type Mode =
@@ -45,6 +45,7 @@ export type State = {
   cmd: Cmd | null;      // active menu command while mode is "command"
   treat: { x: number } | null;
   events: Event[];      // one-shot effects for the page to show, cleared each tick
+  fetch: { phase: "wait" | "chase" | "carry"; ball: Ball | null; home: { x: number; y: number } } | null;
 };
 
 export type World = {
@@ -57,6 +58,7 @@ export type World = {
   scruff: (yaw: number) => [number, number];   // scruff offset from his feet in page px (x, up)
   cursor: { x: number; y: number; stillSince: number } | null;
   hover: boolean;
+  bounds: { left: number; right: number };    // page edges the ball bounces off
 };
 
 const SPEED = 0.9;
@@ -96,7 +98,7 @@ export function initState(w: World): State {
     lastInteraction: w.now, offscreenSince: null,
     swingA: 0, swingV: 0, pivot: { x: 0, y: 0 }, pointer: { x: 0, y: 0, vx: 0 }, pets: [],
     idle: null, lastIdle: null, nextIdleAt: w.now + IDLE_EVERY_MS, noticeCooldown: 0,
-    poseGoal: "stand", phase: 0, wag: null, cmd: null, treat: null, events: [],
+    poseGoal: "stand", phase: 0, wag: null, cmd: null, treat: null, events: [], fetch: null,
   };
 }
 
@@ -218,7 +220,7 @@ export function tick(s: State, w: World): void {
     else if (s.mode === "walk" && w.now >= s.nextIdleAt) startIdle(s, w, pickIdle(s, w.rand));
   }
 
-  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command"].includes(s.mode);
+  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command", "fetch"].includes(s.mode);
   if (grounded && !supported(s, w)) startFall(s);
 
   switch (s.mode) {
@@ -230,6 +232,9 @@ export function tick(s: State, w: World): void {
       break;
     case "command":
       stepCommand(s, w);
+      break;
+    case "fetch":
+      stepFetch(s, w);
       break;
     case "turn":
       if (Math.abs(s.targetYaw - s.yaw) < 0.01) {
@@ -329,12 +334,13 @@ function stepDrop(s: State, w: World): void {
   }
 }
 
-const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake", "command"].includes(m);
+const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake", "command", "fetch"].includes(m);
 
 export function handle(s: State, g: Gesture, w: World): void {
   s.lastInteraction = w.now;
   // any attention ends whatever he was idly doing (including a nap) or was told to do
   if (g.kind !== "dragMove" && s.cmd) endCommand(s);
+  if (g.kind !== "dragMove" && s.fetch) endFetch(s);
   if (s.idle) {
     s.idle = null;
     s.poseGoal = "stand";
@@ -490,6 +496,7 @@ function startCommand(s: State, cmd: Cmd, timer = Infinity): void {
 export function runCommand(s: State, c: Command, w: World): void {
   s.lastInteraction = w.now;
   if (s.cmd) endCommand(s);
+  if (s.fetch) endFetch(s);
   s.idle = null;
   switch (c) {
     case "sit":
@@ -522,8 +529,14 @@ export function runCommand(s: State, c: Command, w: World): void {
       startCommand(s, "zoomies", ZOOMIES_TICKS);
       break;
     case "fetch":
+      s.idle = null;
+      s.hop = null;
+      s.mode = "fetch";
+      s.fetch = { phase: "wait", ball: null, home: { x: s.x, y: s.y } };
+      s.targetYaw = Math.PI / 2;
+      break;
     case "go home":
-      break; // wired up by the fetch and home tasks
+      break; // wired up by the home task
   }
 }
 
@@ -610,4 +623,70 @@ function stepCommand(s: State, w: World): void {
 function dist(p: Platform, c: { x: number; y: number }): number {
   const x = Math.min(Math.max(c.x, p.x1), p.x2);
   return Math.hypot(c.x - x, c.y - p.y);
+}
+
+const CHASE_SPEED = 2.4;
+const LEAP = { dur: 40, h: 60, then: "fetch" as Mode };
+
+// the ball left the cursor: chase it
+export function throwBall(s: State, ball: Ball, w: World): void {
+  if (!s.fetch) return;
+  s.lastInteraction = w.now;
+  s.fetch.ball = { ...ball };
+  s.fetch.home = w.cursor ? { x: w.cursor.x, y: w.cursor.y } : { x: ball.x, y: ball.y };
+  s.fetch.phase = "chase";
+}
+
+export function endFetch(s: State): void {
+  if (!s.fetch) return;
+  s.fetch = null;
+  if (s.mode === "fetch") turnTo(s, facingYaw(s.dir));
+}
+
+// head for point p across platforms: walk on this one, hop toward it, or leap if nothing is reachable.
+// true once he stands next to it.
+function goTo(s: State, w: World, p: { x: number; y: number }, near: number, leap: boolean): boolean {
+  const target = platformUnder(w.plats, p.x, p.y - 1);
+  if (target === s.plat || target < 0) return walkToward(s, w, p.x, CHASE_SPEED, near);
+  if (!walkToward(s, w, p.x, CHASE_SPEED, near)) return false;
+  // at the edge (or under it): find a platform that gets closer
+  const here = dist(w.plats[s.plat], p);
+  const best = reachable(w.plats, s.plat, MAX_CLIMB).sort((a, b) => dist(w.plats[a], p) - dist(w.plats[b], p))[0];
+  if (best !== undefined && dist(w.plats[best], p) < here) startHop(s, w, best, { then: "fetch" });
+  else if (leap) startHop(s, w, target, LEAP);
+  return false;
+}
+
+function stepFetch(s: State, w: World): void {
+  const f = s.fetch;
+  if (!f) return void turnTo(s, facingYaw(s.dir));
+  s.wag = (s.wag ?? 0) + 0.5;
+  if (f.phase === "wait") {
+    s.targetYaw = Math.PI / 2;
+    return;
+  }
+  if (f.phase === "chase" && f.ball) {
+    stepBall(f.ball, w.plats, w.bounds);
+    const b = f.ball;
+    if (b.y > w.view.bottom + 1500) {
+      // lost off the page: it comes back to your hand
+      f.ball = null;
+      f.phase = "wait";
+      return;
+    }
+    const arrived = goTo(s, w, b, 8, b.resting);
+    if (arrived && b.resting && Math.abs(b.x - s.x) <= 12) {
+      f.ball = null;
+      f.phase = "carry";
+    }
+    return;
+  }
+  if (f.phase === "carry") {
+    const home = w.cursor ?? f.home;
+    if (goTo(s, w, home, 24, true)) {
+      // drop it at your feet and look up, ready for another throw
+      f.phase = "wait";
+      s.targetYaw = Math.PI / 2;
+    }
+  }
 }

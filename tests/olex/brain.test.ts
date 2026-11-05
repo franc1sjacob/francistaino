@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, type World, type State } from "../../src/olex/brain";
+import { initState, tick, onPageSwap, handle, pickIdle, runCommand, clickAnywhere, throwBall, endFetch, type World, type State } from "../../src/olex/brain";
 import type { Platform } from "../../src/olex/world";
 
 const text = (x1: number, x2: number, y: number): Platform => ({ x1, x2, y, kind: "text" });
@@ -8,7 +8,7 @@ const floor: Platform = { x1: 0, x2: 1000, y: 900, kind: "floor" };
 export function world(plats: Platform[], over: Partial<World> = {}): World {
   return {
     plats, view: { top: 0, bottom: 1000 }, now: 0, reducedMotion: false, paused: false, rand: () => 0.9,
-    scruff: (yaw) => [10 * Math.cos(yaw), 30], cursor: null, hover: false, ...over,
+    scruff: (yaw) => [10 * Math.cos(yaw), 30], cursor: null, hover: false, bounds: { left: 0, right: 1000 }, ...over,
   };
 }
 
@@ -322,4 +322,72 @@ test("zoomies: he sprints for about 6s, then flops down, then recovers", () => {
   expect(s.poseGoal).toBe("lie");
   run(s, w, 300);
   expect(s.cmd).toBeNull();
+});
+
+function fetchRound(ballPlat: Platform, ballX: number) {
+  const w = world([text(100, 400, 400), ballPlat, floor], { cursor: { x: 200, y: 360, stillSince: 0 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk", dir: 1 });
+  runCommand(s, "fetch", w);
+  expect(s.fetch?.phase).toBe("wait");
+  throwBall(s, { x: ballX, y: ballPlat.y, vx: 0, vy: 0, resting: true }, w);
+  const phases = new Set<string>();
+  let picked = false;
+  for (let i = 0; i < 1250 && !(picked && s.fetch?.phase === "wait"); i++) {
+    run(s, w, 1);
+    phases.add(s.fetch?.phase ?? "none");
+    if (s.fetch?.phase === "carry") picked = true;
+  }
+  return { s, phases };
+}
+
+test("fetch: he hops over to a reachable ball, brings it back, and waits for the next throw", () => {
+  const { s, phases } = fetchRound(text(380, 800, 350), 650);
+  expect(phases.has("chase")).toBe(true);
+  expect(phases.has("carry")).toBe(true);
+  expect(s.fetch?.phase).toBe("wait");
+  expect(s.fetch?.ball).toBeNull();
+  expect(s.plat).toBe(0);
+  expect(Math.abs(s.x - 200)).toBeLessThan(40);
+});
+
+test("fetch: a ball out of hopping reach gets a long leap", () => {
+  const { s, phases } = fetchRound(text(600, 900, 300), 750);
+  expect(phases.has("carry")).toBe(true);
+  expect(s.fetch?.phase).toBe("wait");
+  expect(Math.abs(s.x - 200)).toBeLessThan(40);
+});
+
+test("a thrown ball flies, lands, and he chases it", () => {
+  const w = world([text(100, 900, 400), floor], { cursor: { x: 200, y: 360, stillSince: 0 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk", dir: 1 });
+  runCommand(s, "fetch", w);
+  throwBall(s, { x: 200, y: 360, vx: 8, vy: -6, resting: false }, w);
+  run(s, w, 400);
+  expect(["carry", "wait"]).toContain(s.fetch?.phase);
+});
+
+test("petting him or pressing escape ends the game", () => {
+  const w = world([text(100, 900, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk" });
+  runCommand(s, "fetch", w);
+  handle(s, { kind: "pet" }, w);
+  expect(s.fetch).toBeNull();
+  runCommand(s, "fetch", w);
+  endFetch(s);
+  expect(s.fetch).toBeNull();
+  expect(s.mode).not.toBe("fetch");
+});
+
+test("a ball lost off the page goes back to the cursor instead of falling forever", () => {
+  const w = world([text(100, 400, 400)], { cursor: { x: 200, y: 360, stillSince: 0 }, bounds: { left: 0, right: 5000 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk" });
+  runCommand(s, "fetch", w);
+  throwBall(s, { x: 450, y: 300, vx: 5, vy: 0, resting: false }, w);
+  run(s, w, 600);
+  expect(s.fetch?.phase).toBe("wait");
+  expect(s.fetch?.ball).toBeNull();
 });

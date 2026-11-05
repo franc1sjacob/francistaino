@@ -36,7 +36,7 @@ export type RenderOpts = {
 
 export const BUFFER = { W: 64, H: 56, HANG_Y: 18, GROUND: 2 };
 
-type Mat = "fur" | "ear" | "muzzle" | "collar" | "eye" | "shine" | "tongue";
+type Mat = "fur" | "ear" | "muzzle" | "collar" | "eye" | "shine" | "tongue" | "ball";
 type Group = "mid" | "front" | "back" | "head";
 type Part = {
   c: [number, number, number];
@@ -48,6 +48,7 @@ type Part = {
   bias?: number;
   tongue?: boolean;
   tail?: boolean;
+  ball?: boolean;
   leg?: number;
   phase?: number;
 };
@@ -87,6 +88,7 @@ function parts(P: Params): Part[] {
     { ...ell(9.6, 13.9, 0, 1.9, 1.6, 1.9), mat: "muzzle", fluff: 0.06, g: "head" },
     { ...sph(11.3, 14.5, 0, 0.85), mat: "eye", bias: 1, g: "head" },
     { ...ell(10.4, 12.6, 0, 0.7, 0.7, 0.7), mat: "tongue", bias: 0.8, tongue: true, g: "head" },
+    { ...sph(11.2, 12.8, 0, 1.6), mat: "ball", bias: 1.6, ball: true, g: "head" },
     ...eyes,
     { ...sph(-6.2, 12.0, 0, 2.2), mat: "fur", fluff: 0.2, tail: true, g: "back" },
     { ...ell(5.0, 10.9, 0, 3.3, 0.55, 4.4), mat: "collar", g: "front" },
@@ -190,6 +192,7 @@ const PAL: Record<Mat, string[]> = {
   eye: ["#120a07", "#120a07", "#1a0f0a", "#1a0f0a", "#1a0f0a"],
   shine: ["#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff"],
   tongue: ["#c25a64", "#d66b75", "#e8848d", "#f3a3aa", "#f3a3aa"],
+  ball: ["#9c4a2d", "#bd5d3a", "#d97757", "#e8957a", "#f2b49f"],
 };
 const OUTLINE = "#3a2114";
 const LIGHT = (() => {
@@ -223,6 +226,7 @@ export function render(W: number, H: number, o: RenderOpts): (string | null)[] {
   for (const v of VOX) {
     const p = v.p;
     if (p.tongue && !tongue) continue;
+    if (p.ball && !o.ball) continue;
     let { x, y, z } = v;
     if (p.leg !== undefined && walk !== null) {
       const s = Math.sin(walk * Math.PI * 2 + (p.phase ?? 0));
