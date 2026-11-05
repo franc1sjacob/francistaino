@@ -760,16 +760,8 @@ function stepGoingHome(s: State, w: World): void {
 }
 
 // clicking the house or the nav toggle brings him back out
-// also a respawn: works from anywhere, so a lost olex can always be brought back
 export function callOut(s: State, w: World): void {
-  if (!w.house) return;
-  s.hop = null;
-  s.cmd = null;
-  s.treat = null;
-  s.fetch = null;
-  s.idle = null;
-  s.poseGoal = "stand";
-  s.swingA = s.swingV = 0;
+  if (s.mode !== "home" || !w.house) return;
   const d = door(w.house);
   s.lastInteraction = w.now;
   s.x = d.x;

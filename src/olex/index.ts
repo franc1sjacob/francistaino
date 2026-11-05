@@ -169,9 +169,9 @@ function houseSnores(): void {
   snoreTimer = setTimeout(houseSnores, 2600);
 }
 
-// clicking the doghouse brings him back out, from inside or from wherever he got lost
+// clicking the doghouse brings him back out
 function callOutOfHouse(): void {
-  if (state.mode === "carried") return;
+  if (state.mode !== "home") return;
   remeasure();
   callOut(state, world);
   setHome(false);

@@ -537,11 +537,10 @@ test("dropped outside the text column, he comes back onto a visible line", () =>
   expect(s.y).toBe(w.plats[s.plat].y);
 });
 
-test("clicking the house while he is out (even lost) brings him out of the door", () => {
+test("clicking the house while he is out does nothing", () => {
   const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 912, y: 900 });
-  Object.assign(s, { x: 5000, y: 9000, mode: "drop" });
+  Object.assign(s, { plat: 0, x: 300, y: 400, mode: "walk" });
   callOut(s, w);
-  expect(s.mode).toBe("comingOut");
-  expect(s.x).toBe(896);
-  expect(s.y).toBe(900);
+  expect(s.mode).toBe("walk");
+  expect(s.x).toBe(300);
 });
