@@ -1,6 +1,5 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
-import OlexToggle from './OlexToggle.astro';
 
 const pathname = Astro.url.pathname;
 const isActive = (path: string) => {
@@ -17,7 +16,6 @@ const isActive = (path: string) => {
     <a href="/projects" class:list={[{ active: isActive('/projects') }]}>projects</a>
     <a href="/blog" class:list={[{ active: isActive('/blog') }]}>blog</a>
     <ThemeToggle />
-    <OlexToggle />
   </span>
 </nav>
 

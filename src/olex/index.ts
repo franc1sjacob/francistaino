@@ -140,7 +140,7 @@ function drawBall(): void {
   setBall(layer, c ? { x: c.x + 10, y: c.y + 14 } : { x: state.x + 24, y: state.y - 40 });
 }
 
-// keeps the page, storage, and nav toggle in step with whether he is home
+// keeps the page and storage in step with whether he is home
 function setHome(home: boolean): void {
   canvas.style.visibility = home ? "hidden" : "";
   if (home) {
@@ -150,15 +150,7 @@ function setHome(home: boolean): void {
     bone = null;
   }
   store.setHome(home);
-  syncToggle();
   if (home) houseSnores();
-}
-
-function syncToggle(): void {
-  const home = state.mode === "home";
-  const t = document.getElementById("olex-toggle");
-  t?.setAttribute("aria-pressed", String(!home));
-  t?.setAttribute("aria-label", home ? "call olex out" : "send olex home");
 }
 
 // a z drifts out of the door now and then while he sleeps inside
@@ -177,20 +169,13 @@ function houseSnores(): void {
   snoreTimer = setTimeout(houseSnores, 2600);
 }
 
-// read through a function: TypeScript can't see that runCommand changes the mode
-const isHome = () => state.mode === "home";
-
-function toggleHome(): void {
-  if (state.mode === "home") {
-    remeasure();
-    callOut(state, world);
-    setHome(false);
-    run();
-  } else {
-    runCommand(state, "go home", world);
-    if (isHome()) setHome(true); // reduced motion: instant
-    else syncToggle();
-  }
+// clicking the doghouse brings him back out
+function callOutOfHouse(): void {
+  if (state.mode !== "home") return;
+  remeasure();
+  callOut(state, world);
+  setHome(false);
+  run();
 }
 
 function heart(): void {
@@ -351,7 +336,6 @@ export function start(): void {
   let swapped = false;
   document.addEventListener("astro:after-swap", () => (swapped = true));
   document.addEventListener("astro:page-load", () => {
-    syncToggle(); // the nav was re-rendered
     if (!swapped) return;
     swapped = false;
     remeasure();
@@ -359,11 +343,9 @@ export function start(): void {
     if (state.mode === "home") runCommand(state, "go home", { ...world, reducedMotion: true }); // the house moved with the new page
     else onPageSwap(state, world);
   });
-  // delegated, because the nav and footer are replaced on every navigation
+  // delegated, because the footer is replaced on every navigation
   document.addEventListener("click", (e) => {
-    const t = e.target as Element | null;
-    if (t?.closest("#olex-toggle")) toggleHome();
-    else if (t?.closest("#olex-house") && state.mode === "home") toggleHome();
+    if ((e.target as Element | null)?.closest("#olex-house")) callOutOfHouse();
   });
   document.addEventListener("pointermove", hitTest, { passive: true });
   document.addEventListener("pointermove", trackCursor, { passive: true });
@@ -393,6 +375,5 @@ export function start(): void {
   });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   if (state.mode === "home") setHome(true);
-  else syncToggle();
   run();
 }
