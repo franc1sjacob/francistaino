@@ -61,7 +61,7 @@ function remeasure(): void {
 }
 
 function isOffscreen(): boolean {
-  if (state.mode === "fall") return false; // dropping in from above the screen: keep full speed
+  if (state.mode === "fall" || state.mode === "drop") return false; // falling: keep full speed so he lands or comes back
   const v = view();
   return state.y < v.top || state.y - 60 > v.bottom;
 }
@@ -169,9 +169,9 @@ function houseSnores(): void {
   snoreTimer = setTimeout(houseSnores, 2600);
 }
 
-// clicking the doghouse brings him back out
+// clicking the doghouse brings him back out, from inside or from wherever he got lost
 function callOutOfHouse(): void {
-  if (state.mode !== "home") return;
+  if (state.mode === "carried") return;
   remeasure();
   callOut(state, world);
   setHome(false);

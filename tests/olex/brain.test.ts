@@ -520,3 +520,28 @@ test("review: with reduced motion, carrying him does not swing", () => {
   run(s, w, 30);
   expect(s.swingA).toBe(0);
 });
+
+test("dropped outside the text column, he comes back onto a visible line", () => {
+  const w = world([text(100, 600, 400), floor], { view: { top: 0, bottom: 1000 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 300, y: 400, mode: "walk" });
+  handle(s, { kind: "dragStart", x: 310, y: 370 }, w);
+  handle(s, { kind: "dragMove", x: 1500, y: 300, vx: 0 }, w); // off to the side, past the floor
+  run(s, w, 40);
+  handle(s, { kind: "dragEnd" }, w);
+  run(s, w, 200);
+  expect(["walk", "turn", "shake", "hop", "idle"]).toContain(s.mode);
+  expect(s.x).toBeLessThanOrEqual(1000);
+  expect(s.y).toBeLessThanOrEqual(1000);
+  expect(w.plats[s.plat]).toBeDefined();
+  expect(s.y).toBe(w.plats[s.plat].y);
+});
+
+test("clicking the house while he is out (even lost) brings him out of the door", () => {
+  const { s, w } = withHouse([text(100, 600, 400), floor], { x1: 880, x2: 912, y: 900 });
+  Object.assign(s, { x: 5000, y: 9000, mode: "drop" });
+  callOut(s, w);
+  expect(s.mode).toBe("comingOut");
+  expect(s.x).toBe(896);
+  expect(s.y).toBe(900);
+});

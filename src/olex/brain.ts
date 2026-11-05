@@ -360,8 +360,9 @@ function stepDrop(s: State, w: World): void {
     s.swingA = s.swingV = 0;
     s.hop = { fx: s.x, fy: y, tx: s.x, ty: y, t: 0, dur: 14, h: Math.min(10, s.fallV), to: hit, then: "shake" };
     s.mode = "hop";
-  } else if (s.y > w.view.bottom + 3000) {
-    s.swingA = 0;
+  } else if (s.y > w.view.bottom + 3000 || platformUnder(w.plats, s.x, s.y) < 0) {
+    // dropped where there is nothing to land on (outside the column): come back into view
+    s.swingA = s.swingV = 0;
     dropIn(s, w);
   }
 }
@@ -759,8 +760,16 @@ function stepGoingHome(s: State, w: World): void {
 }
 
 // clicking the house or the nav toggle brings him back out
+// also a respawn: works from anywhere, so a lost olex can always be brought back
 export function callOut(s: State, w: World): void {
-  if (s.mode !== "home" || !w.house) return;
+  if (!w.house) return;
+  s.hop = null;
+  s.cmd = null;
+  s.treat = null;
+  s.fetch = null;
+  s.idle = null;
+  s.poseGoal = "stand";
+  s.swingA = s.swingV = 0;
   const d = door(w.house);
   s.lastInteraction = w.now;
   s.x = d.x;
