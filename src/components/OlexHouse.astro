@@ -1,28 +1,52 @@
 ---
-// olex's doghouse, as pixel art: R roof, r roof shadow, W/w wall planks, D door
-const ART = [
-  '.......RR.......',
-  '......RRRR......',
-  '.....RRRRRR.....',
-  '....RRRRRRRR....',
-  '...RRRRRRRRRR...',
-  '..RRRRRRRRRRRR..',
-  '.rrrrrrrrrrrrrr.',
-  '..WWWWWWWWWWWW..',
-  '..wwwwwDDwwwww..',
-  '..WWWWDDDDWWWW..',
-  '..wwwwDDDDwwww..',
-  '..WWWWDDDDWWWW..',
-  '..wwwwDDDDwwww..',
-  '..WWWWDDDDWWWW..',
-];
-const COLORS: Record<string, string> = { R: '#bd5d3a', r: '#7a3a22', W: '#a76d46', w: '#8a5332', D: '#1a0f0a' };
-const pixels = ART.flatMap((row, y) =>
-  [...row].flatMap((ch, x) => (COLORS[ch] ? [{ x, y, fill: COLORS[ch] }] : [])),
-);
+// olex's doghouse as pixel art, generated on a 32x28 grid and drawn at 2x so its pixels match his
+const W = 32, H = 28;
+const COLORS: Record<string, string> = {
+  R: '#bd5d3a', // roof shingles
+  r: '#9c4a2d', // shingle shadow rows
+  e: '#6e3220', // roof edge and eave
+  W: '#a76d46', // wall planks
+  w: '#8a5332', // plank shadow rows
+  o: '#5e3520', // wall edges
+  f: '#4a2a1a', // door frame
+  D: '#1a0f0a', // doorway
+};
+
+const grid: string[][] = Array.from({ length: H }, () => Array(W).fill('.'));
+const set = (x: number, y: number, c: string) => {
+  if (x >= 0 && x < W && y >= 0 && y < H) grid[y][x] = c;
+};
+
+// roof: a triangle with shingle rows, an outlined edge, and an overhanging eave
+const ROOF = 12;
+for (let y = 0; y < ROOF; y++) {
+  const half = Math.round(2 + y * 1.25);
+  const x1 = 16 - half, x2 = 15 + half;
+  for (let x = x1; x <= x2; x++) set(x, y, x === x1 || x === x2 || y === ROOF - 1 ? 'e' : Math.floor(y / 2) % 2 ? 'r' : 'R');
+}
+
+// walls: planks under the eave
+for (let y = ROOF; y < H; y++)
+  for (let x = 3; x <= 28; x++) set(x, y, x === 3 || x === 28 ? 'o' : Math.floor((y - ROOF) / 2) % 2 ? 'w' : 'W');
+
+// arched doorway with a frame
+const door = (y: number): [number, number] | null => {
+  if (y < 16) return null;
+  if (y === 16) return [13, 18];
+  if (y === 17) return [12, 19];
+  return [11, 20];
+};
+for (let y = 15; y < H; y++) {
+  const d = door(y) ?? (y === 15 ? [13, 18] as [number, number] : null);
+  if (!d) continue;
+  for (let x = d[0] - 1; x <= d[1] + 1; x++) if (grid[y][x] !== 'D') set(x, y, 'f');
+  if (door(y)) for (let x = d[0]; x <= d[1]; x++) set(x, y, 'D');
+}
+
+const pixels = grid.flatMap((row, y) => row.flatMap((ch, x) => (COLORS[ch] ? [{ x, y, fill: COLORS[ch] }] : [])));
 ---
 <button id="olex-house" class="olex-house" type="button" aria-label="call olex out">
-  <svg viewBox="0 0 16 14" width="32" height="28" shape-rendering="crispEdges" aria-hidden="true">
+  <svg viewBox={`0 0 ${W} ${H}`} width={W * 2} height={H * 2} shape-rendering="crispEdges" aria-hidden="true">
     {pixels.map((p) => <rect x={p.x} y={p.y} width="1" height="1" fill={p.fill} />)}
   </svg>
 </button>
