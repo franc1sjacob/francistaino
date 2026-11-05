@@ -3,30 +3,34 @@
 export type Platform = { x1: number; x2: number; y: number; kind: "text" | "floor" | "house" };
 export type View = { top: number; bottom: number };
 
-const SELECTOR = "main h1, main h2, main h3, main p, main li, main .line, main .item, main .tagline, main blockquote, main pre, main img";
+const BOXES = "main pre, main img";
 const MIN_WIDTH = 24;
 const REACH_X = 40;
-const JOIN_GAP = 24;
+const JOIN_GAP = 72; // wide enough to join a "now  value" row across its label column
+const SAME_LINE = 4;
 
-// one platform per rendered text line (or box, for pre/img), plus the footer line as the floor
+// one platform per rendered line of text (or box, for pre/img), plus the footer line as the floor
 export function measure(doc: Document): Platform[] {
   const sx = doc.defaultView?.scrollX ?? 0, sy = doc.defaultView?.scrollY ?? 0;
   const rects: DOMRect[] = [];
-  for (const el of doc.querySelectorAll(SELECTOR)) {
-    if (el.tagName === "PRE" || el.tagName === "IMG") {
-      rects.push(el.getBoundingClientRect());
-      continue;
-    }
+  for (const el of doc.querySelectorAll(BOXES)) rects.push(el.getBoundingClientRect());
+  const main = doc.querySelector("main");
+  if (main) {
+    // measure text runs, not element boxes, so empty space inside blocks is never walkable
+    const walker = doc.createTreeWalker(main, NodeFilter.SHOW_TEXT);
     const range = doc.createRange();
-    range.selectNodeContents(el);
-    rects.push(...range.getClientRects());
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent?.trim() || n.parentElement?.closest("pre")) continue;
+      range.selectNodeContents(n);
+      rects.push(...range.getClientRects());
+    }
   }
   const ps: Platform[] = [];
   for (const r of rects) {
     if (r.width === 0 || r.height === 0) continue;
     const p: Platform = { x1: r.left + sx, x2: r.right + sx, y: Math.round(r.top + sy), kind: "text" };
     // nested elements and label/value rows produce several rects per line; join them into one walkway
-    const same = ps.find((q) => Math.abs(q.y - p.y) <= 2 && p.x1 <= q.x2 + JOIN_GAP && p.x2 >= q.x1 - JOIN_GAP);
+    const same = ps.find((q) => Math.abs(q.y - p.y) <= SAME_LINE && p.x1 <= q.x2 + JOIN_GAP && p.x2 >= q.x1 - JOIN_GAP);
     if (same) {
       same.x1 = Math.min(same.x1, p.x1);
       same.x2 = Math.max(same.x2, p.x2);

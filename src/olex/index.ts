@@ -1,8 +1,9 @@
 // Wires the model, world, and brain to the page: one loop, one canvas.
 
-import { build, render, paint, BUFFER } from "./model";
+import { build, render, paint, scruffOffset, BUFFER } from "./model";
+import { attachInput, type Gesture } from "./input";
 import { measure, type Platform } from "./world";
-import { initState, tick, onPageSwap, type State, type World } from "./brain";
+import { initState, tick, onPageSwap, handle, type State, type World } from "./brain";
 
 const SCALE = 2;
 const REMEASURE_MS = 3000;
@@ -19,6 +20,10 @@ let lastOut: (string | null)[] = [];
 let origin = { x: 0, y: 0 };   // document position of the canvas' top-left
 let lastMeasure = 0;
 let running = false;
+let hovering = false;
+let input: { active: () => boolean };
+let tag: HTMLElement;
+let layer: HTMLElement;
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -38,18 +43,42 @@ function isOffscreen(): boolean {
 
 function draw(): void {
   const { W, H } = BUFFER;
+  const m = state.mode;
+  const airborne = m === "carried" || m === "drop";
   lastOut = render(W, H, {
     yaw: state.yaw,
-    walk: state.mode === "walk" || state.mode === "hop" ? state.walk % 1 : null,
-    tongue: false,
+    walk: m === "walk" || m === "hop" || m === "carried" ? state.walk % 1 : null,
+    tongue: m === "pet" || m === "carried" || m === "spin",
     pose: state.pose,
     poseT: state.poseT,
+    hang: airborne ? state.swingA : null,
   });
   paint(bctx, lastOut, W, H);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(buf, 0, 0, W * SCALE, H * SCALE);
-  origin = { x: Math.round(state.x - (W / 2) * SCALE), y: Math.round(state.y - (H - BUFFER.GROUND) * SCALE) };
+  origin = airborne
+    ? { x: Math.round(state.pivot.x - (W / 2) * SCALE), y: Math.round(state.pivot.y - BUFFER.HANG_Y * SCALE) }
+    : { x: Math.round(state.x - (W / 2) * SCALE), y: Math.round(state.y - (H - BUFFER.GROUND) * SCALE) };
   canvas.style.transform = `translate(${origin.x}px, ${origin.y}px)`;
+  canvas.classList.toggle("carried", m === "carried");
+
+  tag.hidden = !(hovering || m === "carried");
+  const top = airborne ? state.pivot.y - 34 : state.y - 30 * SCALE;
+  tag.style.transform = `translate(${Math.round(state.x)}px, ${Math.round(top)}px) translateX(-50%)`;
+}
+
+function heart(): void {
+  const h = document.createElement("div");
+  h.className = "olex-heart";
+  h.textContent = "♥";
+  h.style.transform = `translate(${Math.round(state.x)}px, ${Math.round(state.y - 44 * SCALE / 2 - 20)}px)`;
+  layer.appendChild(h);
+  setTimeout(() => h.remove(), 900);
+}
+
+function onGesture(g: Gesture): void {
+  handle(state, g, world);
+  if (g.kind === "pet" && (state.mode === "pet" || state.mode === "spin")) heart();
 }
 
 function frame(): void {
@@ -83,11 +112,14 @@ function stop(): void {
 
 // only olex's opaque pixels take the pointer, so links under his empty corners stay clickable
 function hitTest(e: PointerEvent): void {
+  // never drop pointer capture mid-gesture
+  if (input.active()) return;
   const { W, H } = BUFFER;
   const px = Math.floor((e.pageX - origin.x) / SCALE);
   const py = Math.floor((e.pageY - origin.y) / SCALE);
   const hit = px >= 0 && py >= 0 && px < W && py < H && !!lastOut[py * W + px];
   canvas.style.pointerEvents = hit ? "auto" : "none";
+  hovering = hit;
 }
 
 export function start(): void {
@@ -106,8 +138,17 @@ export function start(): void {
   buf.height = H;
   bctx = buf.getContext("2d")!;
 
+  layer = document.getElementById("olex-layer")!;
+  tag = document.getElementById("olex-tag")!;
   build();
-  world = { plats: [] as Platform[], view: view(), now: performance.now(), reducedMotion: reduced.matches, paused: false, rand: Math.random };
+  world = {
+    plats: [] as Platform[], view: view(), now: performance.now(), reducedMotion: reduced.matches, paused: false,
+    rand: Math.random,
+    scruff: (yaw) => {
+      const [x, y] = scruffOffset(yaw);
+      return [x * SCALE, y * SCALE];
+    },
+  };
   remeasure();
   state = initState(world);
 
@@ -129,6 +170,7 @@ export function start(): void {
     onPageSwap(state, world);
   });
   document.addEventListener("pointermove", hitTest, { passive: true });
+  input = attachInput(canvas, onGesture);
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   run();
 }

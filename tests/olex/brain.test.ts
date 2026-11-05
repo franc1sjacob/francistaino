@@ -1,12 +1,15 @@
 import { test, expect } from "bun:test";
-import { initState, tick, onPageSwap, type World, type State } from "../../src/olex/brain";
+import { initState, tick, onPageSwap, handle, type World, type State } from "../../src/olex/brain";
 import type { Platform } from "../../src/olex/world";
 
 const text = (x1: number, x2: number, y: number): Platform => ({ x1, x2, y, kind: "text" });
 const floor: Platform = { x1: 0, x2: 1000, y: 900, kind: "floor" };
 
 export function world(plats: Platform[], over: Partial<World> = {}): World {
-  return { plats, view: { top: 0, bottom: 1000 }, now: 0, reducedMotion: false, paused: false, rand: () => 0.9, ...over };
+  return {
+    plats, view: { top: 0, bottom: 1000 }, now: 0, reducedMotion: false, paused: false, rand: () => 0.9,
+    scruff: (yaw) => [10 * Math.cos(yaw), 30], ...over,
+  };
 }
 
 function run(s: State, w: World, n: number, each?: (s: State) => void) {
@@ -110,4 +113,70 @@ test("after a page swap he falls straight down when a visible line is below him"
   for (let i = 0; i < 200 && (i === 0 || s.mode === "fall"); i++) run(s, w, 1);
   expect(s.plat).toBe(1);
   expect(s.x).toBe(900);
+});
+
+test("dragging carries him by the scruff and he swings behind the pointer", () => {
+  const w = world([text(100, 300, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk" });
+  handle(s, { kind: "dragStart", x: 210, y: 370 }, w);
+  expect(s.mode).toBe("carried");
+  run(s, w, 60); // settle into the resting hang
+  const rest = s.swingA;
+  expect(rest).toBeGreaterThan(0.5);
+  handle(s, { kind: "dragMove", x: 260, y: 370, vx: 50 }, w);
+  run(s, w, 3);
+  expect(s.swingA).toBeLessThan(rest);
+  expect(s.pivot.x).toBeGreaterThan(240);
+});
+
+test("released, he falls, lands on the line under his feet, shakes, and walks on", () => {
+  const w = world([text(100, 300, 400), text(400, 700, 600), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk" });
+  handle(s, { kind: "dragStart", x: 210, y: 370 }, w);
+  handle(s, { kind: "dragMove", x: 510, y: 300, vx: 0 }, w);
+  run(s, w, 40);
+  handle(s, { kind: "dragEnd" }, w);
+  const seen = new Set<string>();
+  run(s, w, 200, (s) => seen.add(s.mode));
+  expect(seen.has("drop")).toBe(true);
+  expect(seen.has("shake")).toBe(true);
+  expect(s.plat).toBe(1);
+  expect(s.y).toBe(600);
+  expect(["walk", "turn"]).toContain(s.mode);
+});
+
+test("petting turns him to face you, then he goes back to walking", () => {
+  const w = world([text(100, 300, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk" });
+  handle(s, { kind: "pet" }, w);
+  expect(s.mode).toBe("pet");
+  run(s, w, 30);
+  expect(s.yaw).toBeCloseTo(Math.PI / 2, 5);
+  run(s, w, 200);
+  expect(["walk", "turn"]).toContain(s.mode);
+});
+
+test("four quick pets make him spin", () => {
+  const w = world([text(100, 300, 400), floor]);
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 200, y: 400, mode: "walk" });
+  for (let i = 0; i < 4; i++) {
+    handle(s, { kind: "pet" }, w);
+    run(s, w, 20);
+  }
+  expect(s.mode).toBe("spin");
+});
+
+test("grabbing him mid-hop cancels the hop", () => {
+  const w = world([text(100, 300, 400), text(250, 600, 350), floor], { rand: () => 0.1 });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 280, y: 400, dir: 1, mode: "walk" });
+  for (let i = 0; i < 100 && s.mode !== "hop"; i++) run(s, w, 1);
+  expect(s.mode).toBe("hop");
+  handle(s, { kind: "dragStart", x: s.x, y: s.y - 30 }, w);
+  expect(s.mode).toBe("carried");
+  expect(s.hop).toBeNull();
 });

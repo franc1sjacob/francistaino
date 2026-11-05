@@ -2,6 +2,7 @@
 ---
 <div id="olex-layer" transition:persist aria-hidden="false">
   <canvas id="olex" role="img" aria-label="Olex the dog"></canvas>
+  <div id="olex-tag" class="olex-tag" hidden>olex</div>
 </div>
 
 <style>
@@ -20,6 +21,30 @@
     top: 0;
     image-rendering: pixelated;
     pointer-events: none;
+    cursor: grab;
+    touch-action: none;
+  }
+  #olex.carried { cursor: grabbing; }
+  .olex-tag {
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-size: 11px;
+    color: var(--accent);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  :global(.olex-heart) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--accent);
+    font-size: 14px;
+    pointer-events: none;
+    animation: olex-rise 0.9s ease-out forwards;
+  }
+  @keyframes olex-rise {
+    to { translate: 0 -28px; opacity: 0; }
   }
 </style>
 

@@ -1,11 +1,12 @@
 // Olex's behavior: a pure state machine advanced once per frame.
 
 import type { Pose } from "./model";
-import { hopPos, stepFall, type Hop } from "./physics";
+import type { Gesture } from "./input";
+import { hopPos, stepFall, stepPendulum, type Hop } from "./physics";
 import { landingCrossed, nearestVisible, platformUnder, reachable, type Platform, type View } from "./world";
 
 export type Mode =
-  | "walk" | "turn" | "hop" | "idle" | "fall" | "carried" | "pet"
+  | "walk" | "turn" | "hop" | "idle" | "fall" | "carried" | "drop" | "shake" | "pet" | "spin"
   | "command" | "fetch" | "home" | "goingHome";
 
 export type State = {
@@ -17,13 +18,18 @@ export type State = {
   yaw: number;
   targetYaw: number;
   walk: number;         // walk cycle phase
-  hop: (Hop & { to: number }) | null;
+  hop: (Hop & { to: number; then?: Mode }) | null;
   fallV: number;
   pose: Pose;
   poseT: number;
   timer: number;        // ticks left in the current timed behavior
   lastInteraction: number;
   offscreenSince: number | null;
+  swingA: number;       // carried tilt around the scruff
+  swingV: number;
+  pivot: { x: number; y: number };             // scruff position while carried or dropped
+  pointer: { x: number; y: number; vx: number };
+  pets: number[];       // recent pet times, for the spin trick
 };
 
 export type World = {
@@ -33,6 +39,7 @@ export type World = {
   reducedMotion: boolean;
   paused: boolean;      // e.g. while text is selected
   rand: () => number;
+  scruff: (yaw: number) => [number, number];   // scruff offset from his feet in page px (x, up)
 };
 
 const SPEED = 0.9;
@@ -45,6 +52,14 @@ const HOP_HEIGHT = 26;
 const SNAP = 12;          // tolerance when platforms shift after a re-measure
 const OFFSCREEN_MS = 10_000;
 const DOG_HEIGHT = 50;
+const CARRY_REST = 1.15;  // hang tail-down at this tilt
+const SHAKE_TICKS = 36;
+const PET_TICKS = 90;
+const SPIN_TICKS = 42;
+const SPIN_RATE = 0.3;
+const PETS_FOR_TRICK = 4;
+const PET_WINDOW_MS = 3000;
+const TAU = Math.PI * 2;
 
 export const facingYaw = (dir: 1 | -1) => (dir > 0 ? 0 : Math.PI);
 
@@ -55,6 +70,7 @@ export function initState(w: World): State {
     mode: "walk", x: p ? Math.min(p.x1 + 40, p.x2 - EDGE) : 0, y: p?.y ?? 0, plat, dir: 1,
     yaw: 0, targetYaw: 0, walk: 0, hop: null, fallV: 0, pose: "stand", poseT: 0, timer: 0,
     lastInteraction: w.now, offscreenSince: null,
+    swingA: 0, swingV: 0, pivot: { x: 0, y: 0 }, pointer: { x: 0, y: 0, vx: 0 }, pets: [],
   };
 }
 
@@ -148,7 +164,7 @@ export function onPageSwap(s: State, w: World): void {
 
 function trackOffscreen(s: State, w: World): void {
   const off = s.y < w.view.top || s.y - DOG_HEIGHT > w.view.bottom;
-  if (!off || s.mode === "fall") {
+  if (!off || s.mode === "fall" || s.mode === "carried" || s.mode === "drop") {
     s.offscreenSince = null;
     return;
   }
@@ -167,7 +183,7 @@ export function tick(s: State, w: World): void {
     s.poseT = 1;
   }
 
-  const grounded = s.mode === "walk" || s.mode === "turn" || s.mode === "idle";
+  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin"].includes(s.mode);
   if (grounded && !supported(s, w)) startFall(s);
 
   switch (s.mode) {
@@ -175,7 +191,10 @@ export function tick(s: State, w: World): void {
       stepWalk(s, w);
       break;
     case "turn":
-      if (Math.abs(s.targetYaw - s.yaw) < 0.01) s.mode = "walk";
+      if (Math.abs(s.targetYaw - s.yaw) < 0.01) {
+        s.yaw = s.targetYaw = facingYaw(s.dir);
+        s.mode = "walk";
+      }
       break;
     case "hop": {
       const h = s.hop!;
@@ -187,12 +206,129 @@ export function tick(s: State, w: World): void {
       if (pos.done) {
         s.plat = h.to;
         s.hop = null;
-        s.mode = "walk";
+        s.mode = h.then ?? "walk";
+        if (s.mode === "shake") s.timer = SHAKE_TICKS;
       }
       break;
     }
+    case "carried":
+      stepCarried(s, w);
+      break;
+    case "drop":
+      stepDrop(s, w);
+      break;
+    case "shake":
+      // shake it off, then carry on the way he was facing
+      s.targetYaw = facingYaw(s.dir) + Math.sin(s.timer * 1.3) * 0.35 * (s.timer / SHAKE_TICKS);
+      if (--s.timer <= 0) turnTo(s, facingYaw(s.dir));
+      break;
+    case "pet":
+      if (--s.timer <= 0) turnTo(s, facingYaw(s.dir));
+      break;
+    case "spin":
+      s.yaw += SPIN_RATE;
+      s.targetYaw = s.yaw;
+      if (--s.timer <= 0) {
+        s.yaw = ((s.yaw % TAU) + TAU) % TAU;
+        const f = facingYaw(s.dir);
+        // finish the turn the short way round
+        turnTo(s, f === 0 && s.yaw > Math.PI ? TAU : f);
+      }
+      break;
     case "fall":
       stepFallMode(s, w);
       break;
+  }
+}
+
+function turnTo(s: State, yaw: number): void {
+  s.targetYaw = yaw;
+  s.mode = "turn";
+}
+
+function feetFromPivot(s: State, w: World): void {
+  const [sx, sy] = w.scruff(s.yaw);
+  s.x = s.pivot.x - sx;
+  s.y = s.pivot.y + sy;
+}
+
+function stepCarried(s: State, w: World): void {
+  s.pivot.x += (s.pointer.x - s.pivot.x) * 0.5;
+  s.pivot.y += (s.pointer.y - s.pivot.y) * 0.5;
+  const sw = { a: s.swingA, v: s.swingV };
+  stepPendulum(sw, CARRY_REST * Math.cos(s.yaw), s.pointer.vx);
+  s.swingA = sw.a;
+  s.swingV = sw.v;
+  s.pointer.vx *= 0.6;
+  s.walk += 0.06; // paddling
+  feetFromPivot(s, w);
+}
+
+function stepDrop(s: State, w: World): void {
+  // right himself while dropping
+  const sw = { a: s.swingA, v: s.swingV };
+  stepPendulum(sw, 0, 0);
+  s.swingA = sw.a * 0.85;
+  s.swingV = sw.v;
+  const prevY = s.y;
+  s.fallV = Math.min(s.fallV + 0.6, 14);
+  s.pivot.y += s.fallV;
+  feetFromPivot(s, w);
+  const hit = landingCrossed(w.plats, s.x, prevY, s.y);
+  if (hit >= 0) {
+    const y = w.plats[hit].y;
+    s.y = y;
+    s.plat = hit;
+    s.swingA = s.swingV = 0;
+    s.hop = { fx: s.x, fy: y, tx: s.x, ty: y, t: 0, dur: 14, h: Math.min(10, s.fallV), to: hit, then: "shake" };
+    s.mode = "hop";
+  } else if (s.y > w.view.bottom + 3000) {
+    s.swingA = 0;
+    dropIn(s, w);
+  }
+}
+
+const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake"].includes(m);
+
+export function handle(s: State, g: Gesture, w: World): void {
+  s.lastInteraction = w.now;
+  switch (g.kind) {
+    case "pet": {
+      if (!canBePetted(s.mode)) return;
+      s.pets = [...s.pets.filter((t) => w.now - t < PET_WINDOW_MS), w.now];
+      if (s.pets.length >= PETS_FOR_TRICK) {
+        s.pets = [];
+        s.mode = "spin";
+        s.timer = SPIN_TICKS;
+        return;
+      }
+      s.mode = "pet";
+      s.timer = PET_TICKS;
+      s.targetYaw = Math.PI / 2;
+      return;
+    }
+    case "dragStart": {
+      if (s.mode === "carried") return;
+      const [sx, sy] = w.scruff(s.yaw);
+      s.pivot = { x: s.x + sx, y: s.y - sy };
+      s.pointer = { x: g.x, y: g.y, vx: 0 };
+      s.swingA = s.swingV = 0;
+      s.hop = null;
+      s.mode = "carried";
+      // turn a little toward you while dangling
+      s.targetYaw = s.dir > 0 ? 0.45 : Math.PI - 0.45;
+      return;
+    }
+    case "dragMove":
+      if (s.mode !== "carried") return;
+      s.pointer = { x: g.x, y: g.y, vx: g.vx };
+      return;
+    case "dragEnd":
+      if (s.mode !== "carried") return;
+      s.mode = "drop";
+      s.fallV = 0;
+      return;
+    case "menu":
+      return; // menu arrives in task 7
   }
 }
