@@ -2,7 +2,7 @@
 ---
 <div id="olex-layer" transition:persist aria-hidden="false">
   <canvas id="olex" role="img" aria-label="Olex the dog"></canvas>
-  <div id="olex-tag" class="olex-tag" hidden>olex</div>
+  <div id="olex-tag" class="olex-tag" hidden>olex<span id="olex-tag-counts" class="olex-tag-counts"></span></div>
   <div id="olex-menu" class="olex-menu" role="menu" aria-label="olex commands" hidden></div>
 </div>
 
@@ -35,6 +35,7 @@
     white-space: nowrap;
     pointer-events: none;
   }
+  .olex-tag-counts { color: var(--dim); }
   :global(.olex-heart) {
     position: absolute;
     left: 0;

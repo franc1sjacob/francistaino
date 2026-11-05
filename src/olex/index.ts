@@ -4,6 +4,8 @@ import { build, render, paint, scruffOffset, BUFFER } from "./model";
 import { attachInput, type Gesture } from "./input";
 import { measure, measureHouse, type Platform } from "./world";
 import { store } from "./store";
+import { createPetCounter } from "./pets";
+import { COUNTER_URL } from "./config";
 import { fixedSteps } from "./physics";
 import { initState, tick, onPageSwap, handle, runCommand, clickAnywhere, throwBall, endFetch, callOut, type State, type World } from "./brain";
 import { attachThrow, setBall } from "./ball";
@@ -28,6 +30,14 @@ let hovering = false;
 let input: { active: () => boolean };
 let tag: HTMLElement;
 let layer: HTMLElement;
+let tagCounts: HTMLElement;
+const pets = createPetCounter({
+  url: COUNTER_URL,
+  fetch: (...a) => fetch(...a),
+  now: () => performance.now(),
+  beacon: (url, body) => navigator.sendBeacon?.(url, body) ?? false,
+  store,
+});
 let bone: HTMLCanvasElement | null = null;
 let legsMoving = false;
 let tickAcc = 0;
@@ -191,7 +201,16 @@ function heart(): void {
   setTimeout(() => h.remove(), 900);
 }
 
+function updateTag(): void {
+  tagCounts.textContent = ` · ${pets.label()}`;
+}
+
 function onGesture(g: Gesture): void {
+  if (g.kind === "pet") {
+    pets.pet();
+    void pets.flush().then(updateTag);
+    updateTag();
+  }
   if (g.kind === "menu") {
     openMenu(g.x - scrollX, g.y - scrollY, (c) => runCommand(state, c, world));
     return;
@@ -286,6 +305,12 @@ export function start(): void {
 
   layer = document.getElementById("olex-layer")!;
   tag = document.getElementById("olex-tag")!;
+  tagCounts = document.getElementById("olex-tag-counts")!;
+  updateTag();
+  void pets.loadTotal().then(updateTag);
+  // batched pets go out every few seconds, and whatever is left when the page goes away
+  setInterval(() => void pets.flush().then(updateTag), 1000);
+  addEventListener("pagehide", () => pets.onPageHide());
   build();
   world = {
     plats: [] as Platform[], view: view(), now: performance.now(), reducedMotion: reduced.matches, paused: false,
