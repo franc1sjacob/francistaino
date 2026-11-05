@@ -1,3 +1,5 @@
 // Where the shared pet total lives. Public by nature; empty means "personal count only".
-// Set PUBLIC_OLEX_COUNTER_URL to point dev at `wrangler dev`.
-export const COUNTER_URL: string = import.meta.env.PUBLIC_OLEX_COUNTER_URL ?? "https://olex-counter.francistaino.workers.dev/pets";
+// Local dev never touches the live counter unless PUBLIC_OLEX_COUNTER_URL says so
+// (e.g. http://localhost:8787/pets for `wrangler dev`).
+const LIVE = "https://olex-counter.francistaino.workers.dev/pets";
+export const COUNTER_URL: string = import.meta.env.PUBLIC_OLEX_COUNTER_URL ?? (import.meta.env.DEV ? "" : LIVE);

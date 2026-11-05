@@ -611,3 +611,82 @@ test("bug: after the sit command, a pet stands him back up", () => {
   expect(s.pose).toBe("stand");
   expect(s.cmd).toBeNull();
 });
+
+// carries him from (300, 370), moving the pointer through `points` one per tick, then lets go
+function carryAlong(s: State, w: World, points: [number, number][]) {
+  handle(s, { kind: "dragStart", x: 300, y: 370 }, w);
+  let px = 300;
+  for (const [x, y] of points) {
+    handle(s, { kind: "dragMove", x, y, vx: x - px }, w);
+    px = x;
+    run(s, w, 1);
+  }
+  handle(s, { kind: "dragEnd" }, w);
+}
+const circles = (n: number, r = 60, step = 0.3): [number, number][] =>
+  Array.from({ length: Math.round((n * Math.PI * 2) / step) }, (_, i) => [300 + r * Math.cos(i * step), 300 + r * Math.sin(i * step)]);
+
+test("dizzy: swirling him around ~3 times makes him dizzy when he lands, then he recovers", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, circles(3));
+  const seen = new Set<string>();
+  run(s, w, 200, (s) => seen.add(s.mode));
+  expect(seen.has("dizzy")).toBe(true);
+  run(s, w, 300);
+  expect(["walk", "turn", "idle"]).toContain(s.mode);
+});
+
+test("dizzy: one circle is not enough", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, circles(1));
+  const seen = new Set<string>();
+  run(s, w, 300, (s) => seen.add(s.mode));
+  expect(seen.has("dizzy")).toBe(false);
+});
+
+test("dizzy: a long straight carry is not dizzying", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, Array.from({ length: 120 }, (_, i) => [300 + i * 3, 300] as [number, number]));
+  const seen = new Set<string>();
+  run(s, w, 300, (s) => seen.add(s.mode));
+  expect(seen.has("dizzy")).toBe(false);
+});
+
+test("dizzy: shaking him hard back and forth makes him dizzy", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, Array.from({ length: 120 }, (_, i) => [300 + (Math.floor(i / 6) % 2 ? 80 : -80), 300] as [number, number]));
+  const seen = new Set<string>();
+  run(s, w, 200, (s) => seen.add(s.mode));
+  expect(seen.has("dizzy")).toBe(true);
+});
+
+test("dizzy: gently moving him side to side does not", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, Array.from({ length: 120 }, (_, i) => [300 + 15 * Math.sin(i / 10), 300] as [number, number]));
+  const seen = new Set<string>();
+  run(s, w, 300, (s) => seen.add(s.mode));
+  expect(seen.has("dizzy")).toBe(false);
+});
+
+test("dizzy: while stunned he ignores pets and commands", () => {
+  const { s, w } = onLine();
+  carryAlong(s, w, circles(3));
+  for (let i = 0; i < 200 && s.mode !== "dizzy"; i++) run(s, w, 1);
+  expect(s.mode).toBe("dizzy");
+  handle(s, { kind: "pet" }, w);
+  expect(s.mode).toBe("dizzy");
+  runCommand(s, "zoomies", w);
+  expect(s.mode).toBe("dizzy");
+  expect(s.cmd).toBeNull();
+});
+
+test("dizzy: with reduced motion he does not wobble", () => {
+  const { s, w } = onLine({ reducedMotion: true });
+  carryAlong(s, w, circles(3));
+  for (let i = 0; i < 200 && s.mode !== "dizzy"; i++) run(s, w, 1);
+  expect(s.mode).toBe("dizzy");
+  const yaw = s.yaw, x = s.x;
+  run(s, w, 60);
+  expect(s.yaw).toBeCloseTo(yaw, 5);
+  expect(s.x).toBe(x);
+});

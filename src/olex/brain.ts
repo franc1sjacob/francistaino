@@ -7,12 +7,12 @@ import { hopPos, stepBall, stepFall, stepPendulum, type Ball, type Hop } from ".
 import { landingCrossed, nearestVisible, platformUnder, reachable, type Platform, type View } from "./world";
 
 export type Mode =
-  | "walk" | "turn" | "hop" | "idle" | "fall" | "carried" | "drop" | "shake" | "pet" | "spin"
+  | "walk" | "turn" | "hop" | "idle" | "fall" | "carried" | "drop" | "shake" | "pet" | "spin" | "dizzy"
   | "command" | "fetch" | "home" | "goingHome" | "comingOut";
 
 export type Idle = "sit" | "scratch" | "yawn" | "nap" | "notice";
 export type Cmd = "sit" | "roll" | "treat" | "follow" | "zoomies" | "flop";
-export type Event = "heart";
+export type Event = "heart" | "stars";
 
 export type State = {
   mode: Mode;
@@ -47,6 +47,10 @@ export type State = {
   events: Event[];      // one-shot effects for the page to show, cleared each tick
   fetch: { phase: "wait" | "chase" | "carry"; ball: Ball | null; home: { x: number; y: number } } | null;
   after: Mode | null;   // mode to resume after landing from a fall
+  dizzy: boolean;       // swirled or shaken enough while carried: stunned when he lands
+  turns: { t: number; d: number }[]; // recent turning of the drag path, for spotting circles
+  dragAng: number | null;
+  shakeMeter: number;   // builds up while he is swung hard
 };
 
 export type World = {
@@ -101,6 +105,7 @@ export function initState(w: World): State {
     swingA: 0, swingV: 0, pivot: { x: 0, y: 0 }, pointer: { x: 0, y: 0, vx: 0 }, pets: [],
     idle: null, lastIdle: null, nextIdleAt: w.now + IDLE_EVERY_MS, noticeCooldown: 0,
     poseGoal: "stand", phase: 0, wag: null, cmd: null, treat: null, events: [], fetch: null, after: null,
+    dizzy: false, turns: [], dragAng: null, shakeMeter: 0,
   };
 }
 
@@ -244,7 +249,7 @@ export function tick(s: State, w: World): void {
     else if (s.mode === "walk" && w.now >= s.nextIdleAt) startIdle(s, w, pickIdle(s, w.rand));
   }
 
-  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command", "fetch", "goingHome", "comingOut"].includes(s.mode);
+  const grounded = ["walk", "turn", "idle", "pet", "shake", "spin", "command", "fetch", "goingHome", "comingOut", "dizzy"].includes(s.mode);
   if (grounded && !supported(s, w)) startFall(s, resumable(s.mode));
 
   switch (s.mode) {
@@ -286,6 +291,11 @@ export function tick(s: State, w: World): void {
         s.hop = null;
         s.mode = h.then ?? "walk";
         if (s.mode === "shake") s.timer = SHAKE_TICKS;
+        if (s.mode === "dizzy") {
+          s.timer = DIZZY_TICKS;
+          s.dizzy = false;
+          s.events.push("stars");
+        }
       }
       break;
     }
@@ -302,6 +312,9 @@ export function tick(s: State, w: World): void {
       break;
     case "pet":
       if (--s.timer <= 0) turnTo(s, facingYaw(s.dir));
+      break;
+    case "dizzy":
+      stepDizzy(s, w);
       break;
     case "spin":
       s.yaw += SPIN_RATE;
@@ -340,6 +353,9 @@ function stepCarried(s: State, w: World): void {
   s.swingV = w.reducedMotion ? 0 : sw.v;
   s.pointer.vx *= 0.6;
   s.walk += 0.06; // paddling
+  // swung hard enough for long enough, he gets dizzy
+  s.shakeMeter = s.shakeMeter * 0.985 + Math.max(0, Math.abs(sw.v) - SHAKE_SPEED);
+  if (s.shakeMeter > SHAKE_LIMIT) s.dizzy = true;
   feetFromPivot(s, w);
 }
 
@@ -359,7 +375,17 @@ function stepDrop(s: State, w: World): void {
     s.y = y;
     s.plat = hit;
     s.swingA = s.swingV = 0;
-    s.hop = { fx: s.x, fy: y, tx: s.x, ty: y, t: 0, dur: 14, h: Math.min(10, s.fallV), to: hit, then: "shake" };
+    if (w.reducedMotion) {
+      // no landing bounce or shake: straight to seeing stars, or sitting calmly
+      if (s.dizzy) {
+        s.mode = "dizzy";
+        s.timer = DIZZY_TICKS;
+        s.dizzy = false;
+        s.events.push("stars");
+      } else s.mode = "idle";
+      return;
+    }
+    s.hop = { fx: s.x, fy: y, tx: s.x, ty: y, t: 0, dur: 14, h: Math.min(10, s.fallV), to: hit, then: s.dizzy ? "dizzy" : "shake" };
     s.mode = "hop";
   } else if (s.y > w.view.bottom + 3000 || platformUnder(w.plats, s.x, s.y) < 0) {
     // dropped where there is nothing to land on (outside the column): come back into view
@@ -371,6 +397,8 @@ function stepDrop(s: State, w: World): void {
 const canBePetted = (m: Mode) => ["walk", "turn", "idle", "pet", "shake", "command", "fetch"].includes(m);
 
 export function handle(s: State, g: Gesture, w: World): void {
+  // seeing stars: clicks and the menu do nothing until he snaps out of it
+  if (s.mode === "dizzy" && (g.kind === "pet" || g.kind === "menu")) return;
   s.lastInteraction = w.now;
   // any attention ends whatever he was idly doing (including a nap) or was told to do
   if (g.kind !== "dragMove" && s.cmd) endCommand(s);
@@ -403,12 +431,17 @@ export function handle(s: State, g: Gesture, w: World): void {
       s.swingA = s.swingV = 0;
       s.hop = null;
       s.mode = "carried";
+      s.dizzy = false;
+      s.turns = [];
+      s.dragAng = null;
+      s.shakeMeter = 0;
       // turn a little toward you while dangling
       s.targetYaw = s.dir > 0 ? 0.45 : Math.PI - 0.45;
       return;
     }
     case "dragMove":
       if (s.mode !== "carried") return;
+      trackTurning(s, g.x - s.pointer.x, g.y - s.pointer.y, w.now);
       s.pointer = { x: g.x, y: g.y, vx: g.vx };
       return;
     case "dragEnd":
@@ -530,6 +563,7 @@ function startCommand(s: State, cmd: Cmd, timer = Infinity): void {
 const ENERGETIC: Command[] = ["zoomies", "spin", "roll over", "follow me"];
 
 export function runCommand(s: State, c: Command, w: World): void {
+  if (s.mode === "dizzy") return; // too dizzy to listen
   s.lastInteraction = w.now;
   if (w.reducedMotion && ENERGETIC.includes(c)) c = "sit"; // calm stand-in for big motion
   if (s.cmd) endCommand(s);
@@ -793,4 +827,47 @@ export function houseInFront(s: State, w: World): boolean {
   if (s.mode !== "goingHome") return false;
   const d = door(w.house);
   return Math.abs(s.x - d.x) <= DOOR_REACH && Math.abs(s.y - d.y) <= SNAP;
+}
+
+const DIZZY_TICKS = 180;              // about 3s of seeing stars
+const DIZZY_CIRCLES = 2.5;            // full circles of the drag path...
+const DIZZY_WINDOW_MS = 3000;         // ...within this long
+const MIN_SEGMENT = 3;                // px of pointer travel before a direction counts
+const REVERSAL = 2.6;                 // rad: a near U-turn is back-and-forth, not circling
+const SHAKE_SPEED = 0.2;              // swing speed (rad/tick) that counts as being shaken
+const SHAKE_LIMIT = 2.5;
+
+// adds up how much the drag path turns; circling the same way ~2.5 times in 3s makes him dizzy
+function trackTurning(s: State, dx: number, dy: number, now: number): void {
+  if (Math.hypot(dx, dy) < MIN_SEGMENT) return;
+  const ang = Math.atan2(dy, dx);
+  if (s.dragAng !== null) {
+    let d = ang - s.dragAng;
+    d = Math.atan2(Math.sin(d), Math.cos(d)); // wrap to -PI..PI
+    if (Math.abs(d) < REVERSAL) s.turns.push({ t: now, d });
+  }
+  s.dragAng = ang;
+  s.turns = s.turns.filter((e) => now - e.t <= DIZZY_WINDOW_MS);
+  const total = Math.abs(s.turns.reduce((sum, e) => sum + e.d, 0));
+  if (total >= DIZZY_CIRCLES * Math.PI * 2) s.dizzy = true;
+}
+
+function stepDizzy(s: State, w: World): void {
+  if (w.reducedMotion) {
+    s.targetYaw = s.yaw; // stunned, but holding still
+  } else {
+    // sway, bob, and stumble a little, facing roughly toward you
+    s.targetYaw = Math.PI / 2 + Math.sin(s.timer * 0.22) * 0.6;
+    const p = w.plats[s.plat];
+    const step = Math.sin(s.timer * 0.09) * 0.5;
+    if (p && s.x + step > p.x1 + EDGE && s.x + step < p.x2 - EDGE) {
+      s.x += step;
+      s.walk += WALK_RATE * 0.6;
+    }
+  }
+  if (--s.timer <= 0) {
+    // shake it off and carry on
+    s.mode = "shake";
+    s.timer = SHAKE_TICKS;
+  }
 }

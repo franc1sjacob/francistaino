@@ -93,6 +93,7 @@ function draw(): void {
   document.getElementById("olex-house")?.classList.toggle("in-front", houseInFront(state, world));
   drawBone();
   drawBall();
+  drawStars();
 
   tag.hidden = !(hovering || m === "carried");
   const top = airborne ? state.pivot.y - 34 : state.y - 30 * SCALE;
@@ -130,6 +131,37 @@ function drawBone(): void {
     layer.appendChild(bone);
   }
   bone.style.transform = `translate(${Math.round(state.treat.x - 7)}px, ${Math.round(world.plats[state.plat]?.y - 10)}px)`;
+}
+
+// cartoon stars circling his head while he is dizzy
+const STAR_COLORS = ["var(--accent)", "#f5d76e", "var(--accent)"];
+let stars: HTMLElement[] = [];
+function drawStars(): void {
+  const dizzy = state.mode === "dizzy";
+  if (!dizzy) {
+    stars.forEach((st) => st.remove());
+    stars = [];
+    return;
+  }
+  if (!stars.length) {
+    stars = STAR_COLORS.map((color) => {
+      const st = document.createElement("div");
+      st.className = "olex-star";
+      st.textContent = "✦";
+      st.style.color = color;
+      layer.appendChild(st);
+      return st;
+    });
+  }
+  const [sx, sy] = world.scruff(state.yaw);
+  const hx = state.x + sx * 1.2, hy = state.y - sy - 20;
+  const spin = world.reducedMotion ? 0 : performance.now() * 0.005;
+  stars.forEach((st, i) => {
+    const a = spin + (i * Math.PI * 2) / stars.length;
+    // a flat ellipse, the back star dimmer as if behind his head
+    st.style.transform = `translate(${Math.round(hx + Math.cos(a) * 18 - 5)}px, ${Math.round(hy + Math.sin(a) * 5 - 10)}px)`;
+    st.style.opacity = Math.sin(a) < 0 ? "0.55" : "1";
+  });
 }
 
 let heldBall: { x: number; y: number } | null = null; // where a finger is holding the ball
@@ -197,6 +229,8 @@ function updateTag(): void {
 }
 
 function onGesture(g: Gesture): void {
+  // seeing stars: no menu, and clicks don't count as pets
+  if (state.mode === "dizzy" && (g.kind === "pet" || g.kind === "menu")) return;
   if (g.kind === "pet") {
     pets.pet();
     void pets.flush().then(updateTag);
