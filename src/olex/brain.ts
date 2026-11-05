@@ -141,9 +141,9 @@ function startHop(s: State, w: World, to: number, o: { dur?: number; h?: number;
   const t = w.plats[to];
   const tx = Math.min(Math.max(s.x, t.x1 + EDGE), t.x2 - EDGE);
   if (t.y - s.y > MAX_HOP_DROP) {
-    // too far down to hop: step off the edge he is facing and fall for real
-    const here = w.plats[s.plat];
-    if (here) s.x = s.dir > 0 ? here.x2 + 2 : here.x1 - 2;
+    // too far down to hop: drop straight through the line he is on and fall for real
+    // (nudging y past his own line so the fall doesn't land right back on it)
+    s.y += 1;
     startFall(s, o.then ?? null);
     return;
   }
@@ -235,6 +235,7 @@ export function tick(s: State, w: World): void {
     s.poseT = 1;
   }
   stepPose(s);
+  stepBallInFlight(s, w);
   s.wag = w.hover || s.mode === "pet" ? (s.wag ?? 0) + 0.5 : null;
   if (!w.reducedMotion) {
     const restful = s.mode === "walk" || s.mode === "turn" || s.mode === "idle";
@@ -534,6 +535,7 @@ export function runCommand(s: State, c: Command, w: World): void {
   if (s.cmd) endCommand(s);
   if (s.fetch) endFetch(s);
   s.idle = null;
+  s.poseGoal = "stand"; // whatever he was doing (like sitting on his own), the new command starts standing
   switch (c) {
     case "sit":
       startCommand(s, "sit");
@@ -695,6 +697,18 @@ function goTo(s: State, w: World, p: { x: number; y: number }, near: number, lea
   return false;
 }
 
+// the ball flies every tick, even while he is mid-hop or falling after it
+function stepBallInFlight(s: State, w: World): void {
+  const f = s.fetch;
+  if (f?.phase !== "chase" || !f.ball) return;
+  stepBall(f.ball, w.plats, w.bounds);
+  if (f.ball.y > w.view.bottom + 1500) {
+    // lost off the page: it comes back to your hand
+    f.ball = null;
+    f.phase = "wait";
+  }
+}
+
 function stepFetch(s: State, w: World): void {
   const f = s.fetch;
   if (!f) return void turnTo(s, facingYaw(s.dir));
@@ -704,14 +718,7 @@ function stepFetch(s: State, w: World): void {
     return;
   }
   if (f.phase === "chase" && f.ball) {
-    stepBall(f.ball, w.plats, w.bounds);
     const b = f.ball;
-    if (b.y > w.view.bottom + 1500) {
-      // lost off the page: it comes back to your hand
-      f.ball = null;
-      f.phase = "wait";
-      return;
-    }
     const arrived = goTo(s, w, b, 8, b.resting);
     if (arrived && b.resting && Math.abs(b.x - s.x) <= 12) {
       f.ball = null;

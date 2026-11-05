@@ -14,7 +14,6 @@ import { openMenu } from "./menu";
 
 const SCALE = 2;
 const REMEASURE_MS = 3000;
-const OFFSCREEN_POLL_MS = 500;
 
 let started = false;
 let canvas: HTMLCanvasElement;
@@ -241,12 +240,9 @@ function frame(): void {
   // frames with no tick keep the previous answer, so legs don't freeze on high refresh displays
   if (steps > 0) legsMoving = state.walk !== walkBefore;
   snore(now);
-  if (isOffscreen()) {
-    // keep thinking (so he can come back) but skip drawing
-    setTimeout(frame, OFFSCREEN_POLL_MS);
-    return;
-  }
-  draw();
+  // off screen he keeps thinking at full rate (ticks are cheap) but skips drawing, the expensive part;
+  // a slower poll here made him freeze and then pop back when he reappeared
+  if (!isOffscreen()) draw();
   requestAnimationFrame(frame);
 }
 

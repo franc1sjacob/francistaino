@@ -562,3 +562,52 @@ test("the house comes in front for his last steps through the door, and when he 
   Object.assign(s, { mode: "home" });
   expect(houseInFront(s, w)).toBe(true);
 });
+
+test("bug: the ball keeps flying while he hops or falls after it", () => {
+  const w = world([text(100, 900, 400), text(100, 900, 600), floor], { cursor: { x: 200, y: 360, stillSince: 0 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 220, y: 400, mode: "walk" });
+  runCommand(s, "fetch", w);
+  throwBall(s, { x: 500, y: 300, vx: 3, vy: -2, resting: false }, w);
+  s.mode = "hop"; // he is mid-hop
+  s.hop = { fx: 220, fy: 400, tx: 220, ty: 400, t: 0, dur: 30, h: 26, to: 0, then: "fetch" };
+  const y0 = s.fetch!.ball!.y;
+  run(s, w, 5);
+  expect(s.fetch!.ball!.y).not.toBe(y0);
+});
+
+test("bug: dropping down to the ball does not teleport him sideways", () => {
+  const w = world([text(100, 900, 400), floor], { cursor: { x: 500, y: 360, stillSince: 0 } });
+  const s = initState(w);
+  Object.assign(s, { plat: 0, x: 500, y: 400, mode: "walk", dir: 1 });
+  runCommand(s, "fetch", w);
+  throwBall(s, { x: 505, y: 900, vx: 0, vy: 0, resting: true }, w); // ball on the floor, right below him
+  let maxStep = 0, px = s.x, py = s.y;
+  run(s, w, 200, (s) => {
+    maxStep = Math.max(maxStep, Math.hypot(s.x - px, s.y - py));
+    px = s.x;
+    py = s.y;
+  });
+  expect(maxStep).toBeLessThan(20); // fall speed caps at 14px/tick
+  expect(s.fetch?.phase === "carry" || s.fetch?.phase === "wait").toBe(true);
+});
+
+test("bug: zoomies after sitting on his own does not zoom while seated", () => {
+  const { s, w } = onLine();
+  Object.assign(s, { mode: "idle", idle: "sit", poseGoal: "sit", pose: "sit", poseT: 1, timer: 999 });
+  runCommand(s, "zoomies", w);
+  expect(s.poseGoal).toBe("stand");
+  run(s, w, 20);
+  expect(s.pose).toBe("stand");
+});
+
+test("bug: after the sit command, a pet stands him back up", () => {
+  const { s, w } = onLine();
+  runCommand(s, "sit", w);
+  run(s, w, 30);
+  expect(s.pose).toBe("sit");
+  handle(s, { kind: "pet" }, w);
+  run(s, w, 30);
+  expect(s.pose).toBe("stand");
+  expect(s.cmd).toBeNull();
+});
