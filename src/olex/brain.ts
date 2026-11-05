@@ -12,7 +12,7 @@ export type Mode =
 
 export type Idle = "sit" | "scratch" | "yawn" | "nap" | "notice";
 export type Cmd = "sit" | "roll" | "treat" | "follow" | "zoomies" | "flop";
-export type Event = "heart" | "stars";
+export type Event = "heart" | "stars" | "nom";
 
 export type State = {
   mode: Mode;
@@ -43,7 +43,7 @@ export type State = {
   phase: number;        // scratch phase
   wag: number | null;   // tail wag phase, null when still
   cmd: Cmd | null;      // active menu command while mode is "command"
-  treat: { x: number } | null;
+  treat: { x: number; eaten: number } | null; // eaten: 0 untouched .. 1 just the bone
   events: Event[];      // one-shot effects for the page to show, cleared each tick
   fetch: { phase: "wait" | "chase" | "carry"; ball: Ball | null; home: { x: number; y: number } } | null;
   after: Mode | null;   // mode to resume after landing from a fall
@@ -543,7 +543,8 @@ const ZOOMIES_TICKS = 375;   // about 6s
 const ZOOMIES_SPEED = 4.5;
 const FLOP_TICKS = 150;
 const ROLL_TICKS = 140;
-const EAT_TICKS = 90;
+const EAT_TICKS = 110;
+const NOM_EVERY = 22;
 const FOLLOW_SPEED = 1.4;
 
 function endCommand(s: State): void {
@@ -589,7 +590,7 @@ export function runCommand(s: State, c: Command, w: World): void {
       const p = w.plats[s.plat];
       const x = Math.min(Math.max(s.x + s.dir * 40, p.x1 + EDGE), p.x2 - EDGE);
       startCommand(s, "treat");
-      s.treat = { x };
+      s.treat = { x, eaten: 0 };
       break;
     }
     case "nap":
@@ -648,6 +649,9 @@ function stepCommand(s: State, w: World): void {
         s.timer = EAT_TICKS;
         s.targetYaw = Math.PI / 2;
       }
+      // nom nom nom: a chomp every so often, and the drumstick goes down bite by bite
+      if ((EAT_TICKS - s.timer) % NOM_EVERY === 0) s.events.push("nom");
+      s.treat.eaten = 1 - s.timer / EAT_TICKS;
       if (--s.timer <= 0) {
         s.events.push("heart");
         endCommand(s);

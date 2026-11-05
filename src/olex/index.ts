@@ -125,10 +125,13 @@ const CHICKEN = [
   "........b..",
 ];
 const CHICKEN_COLORS: Record<string, string> = { M: "#c8743a", m: "#8f4a22", h: "#e8a067", b: "#efe6d6" };
+const MEAT_COLS = 8; // the meat is the left 8 columns; the bone is what's left at the end
+let treatBites = -1;
 function drawTreat(): void {
   if (!state.treat) {
     treatEl?.remove();
     treatEl = null;
+    treatBites = -1;
     return;
   }
   if (!treatEl) {
@@ -136,15 +139,21 @@ function drawTreat(): void {
     treatEl.className = "olex-treat";
     treatEl.width = CHICKEN[0].length;
     treatEl.height = CHICKEN.length;
+    layer.appendChild(treatEl);
+  }
+  // bite by bite: each stage takes two more columns of meat off the drumstick
+  const bites = Math.min(4, Math.floor(state.treat.eaten * 5));
+  if (bites !== treatBites) {
+    treatBites = bites;
     const c = treatEl.getContext("2d")!;
+    c.clearRect(0, 0, treatEl.width, treatEl.height);
     CHICKEN.forEach((row, y) =>
       [...row].forEach((ch, x) => {
-        if (!CHICKEN_COLORS[ch]) return;
+        if (!CHICKEN_COLORS[ch] || (ch !== "b" && x < (bites * MEAT_COLS) / 4)) return;
         c.fillStyle = CHICKEN_COLORS[ch];
         c.fillRect(x, y, 1, 1);
       }),
     );
-    layer.appendChild(treatEl);
   }
   const ground = world.plats[state.plat]?.y ?? state.y;
   treatEl.style.transform = `translate(${Math.round(state.treat.x - CHICKEN[0].length)}px, ${Math.round(ground - CHICKEN.length * 2)}px)`;
@@ -232,6 +241,20 @@ function callOutOfHouse(): void {
   run();
 }
 
+// little "nom"s pop up above his head while he eats, alternating sides
+let nomSide = 1;
+function nom(): void {
+  const n = document.createElement("div");
+  n.className = "olex-nom";
+  n.textContent = "nom";
+  nomSide = -nomSide;
+  // positioned with left/top, not transform: the pop-in animation's scale would otherwise scale the position too
+  n.style.left = `${Math.round(state.x + nomSide * 14 - 9)}px`;
+  n.style.top = `${Math.round(state.y - 54)}px`;
+  layer.appendChild(n);
+  setTimeout(() => n.remove(), 900);
+}
+
 function heart(): void {
   const h = document.createElement("div");
   h.className = "olex-heart";
@@ -275,13 +298,15 @@ function frame(): void {
   const { steps, acc } = fixedSteps(tickAcc, lastFrame ? now - lastFrame : 0);
   tickAcc = acc;
   lastFrame = now;
-  let hearts = 0;
+  let hearts = 0, noms = 0;
   const walkBefore = state.walk;
   for (let i = 0; i < steps; i++) {
     tick(state, world);
     hearts += state.events.filter((e) => e === "heart").length;
+    noms += state.events.filter((e) => e === "nom").length;
   }
   if (hearts) heart();
+  if (noms) nom();
   if (state.mode === "home") {
     // he went inside: hide him and let the loop sleep until he is called out
     setHome(true);

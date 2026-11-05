@@ -88,6 +88,20 @@
     touch-action: none;
     cursor: grab;
   }
+  :global(.olex-nom) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-size: 10px;
+    color: var(--muted);
+    pointer-events: none;
+    animation: olex-nom 0.9s ease-out forwards;
+  }
+  @keyframes olex-nom {
+    0% { scale: 0.6; opacity: 0; }
+    20% { scale: 1.1; opacity: 1; }
+    100% { translate: 0 -18px; opacity: 0; }
+  }
   :global(.olex-treat) {
     position: absolute;
     left: 0;

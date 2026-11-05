@@ -706,3 +706,18 @@ test("dizzy: his body stays put facing you; only the head wobble phase moves, sl
   expect(s.phase - phase).toBeGreaterThan(2);
   expect(s.phase - phase).toBeLessThan(6);
 });
+
+test("eating the treat: he goes nom nom nom, and the drumstick gets eaten bite by bite", () => {
+  const { s, w } = onLine();
+  runCommand(s, "treat", w);
+  let noms = 0;
+  const eaten: number[] = [];
+  run(s, w, 300, (s) => {
+    noms += s.events.filter((e) => e === "nom").length;
+    if (s.treat) eaten.push(s.treat.eaten);
+  });
+  expect(noms).toBeGreaterThanOrEqual(4);
+  expect(eaten[0]).toBe(0);
+  for (let i = 1; i < eaten.length; i++) expect(eaten[i]).toBeGreaterThanOrEqual(eaten[i - 1]);
+  expect(eaten[eaten.length - 1]).toBeGreaterThan(0.8);
+});
